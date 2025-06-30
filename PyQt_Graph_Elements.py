@@ -167,7 +167,6 @@ def detect_blobs(img_norm, img_orig, min_thresh, min_area, color, file_name):
                 'box_y': box_y,
                 'box_size': box_size
             })
-
     return blobs
 
 def update_progress(val):
@@ -1293,6 +1292,12 @@ def init_gui():
 
     def clear_queue_server_list():    
         queue_server_list.clear()
+        # size = window.size()
+        
+        # width = size.width()
+        # height = size.height()
+        # print(f"Width: {width}, Height: {height}")
+
 
         
     add_btn = QPushButton("Add custom box")
@@ -1303,7 +1308,7 @@ def init_gui():
 
     union_list_widget = QListWidget()
     union_list_widget.setSelectionMode(QListWidget.MultiSelection)  # Allow multiple selection
-    union_list_widget.setMinimumHeight(500)
+    union_list_widget.setMinimumHeight(200)
     union_list_widget.itemSelectionChanged.connect(on_union_item_selected)
     union_list_widget.setLineWidth(1)
     union_list_widget.setStyleSheet("""
@@ -1330,7 +1335,7 @@ def init_gui():
     union_list_widget.setEnabled(True)
 
     queue_server_list = QListWidget()
-    queue_server_list.setMinimumHeight(500)
+    queue_server_list.setMinimumHeight(200)
     queue_server_list.setLineWidth(1)
 
     send_to_list_btn = QPushButton("Add to Queue server List")
@@ -1390,7 +1395,7 @@ def init_gui():
     blobs = get_current_blobs()
     graphics_view.update_blobs(blobs, selected_colors)
     redraw_boxes(blobs, selected_colors)
-    window.resize(1200, 800)
+    window.resize(1900, 1000)
 
 window.setLayout(main_layout)
 window.show()
