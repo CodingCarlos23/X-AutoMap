@@ -20,7 +20,53 @@ import re
 import json
 import threading
 import multiprocessing
-
+ 
+import json
+ 
+def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25):
+    """
+    For each region in the JSON file:
+    - Move stage to real_center_um
+    - Perform fly2d scan centered on that position
+    """
+    with open(json_file_path, "r") as f:
+        boxes = json.load(f)
+ 
+    for label, info in boxes.items():
+        cx, cy = info["real_center_um"]         # center in um
+        sx, sy = info["real_size_um"]           # size in um
+        num_x = int(sx * px_per_um)
+        num_y = int(sy * px_per_um)
+ 
+        # Define relative scan range around center
+        x_start = -sx / 2
+        x_end = sx / 2
+        y_start = -sy / 2
+        y_end = sy / 2
+ 
+        # # Detector names
+        # det_names = [d.name for d in eval(dets)]
+ 
+        # # Create ROI dictionary to move motors first
+        # roi = {x_motor: cx, y_motor: cy}
+ 
+        # RM.item_add(BPlan(
+        #     "recover_pos_and_scan",
+        #     label,
+        #     roi,
+        #     det_names,
+        #     x_motor,
+        #     x_start,
+        #     x_end,
+        #     num_x,
+        #     y_motor,
+        #     y_start,
+        #     y_end,
+        #     num_y,
+        #     exp_t
+        # ))
+        print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
+        
 # Store paths selected by user
 img_paths = [None, None, None]  # [R, G, B]
 file_names = [None, None, None]
@@ -35,22 +81,26 @@ microns_per_pixel_y = 0.0
 true_origin_x = 0.0
 true_origin_y = 0.0
 
+selected_directory = None
+
 def on_dir_selected():
-    directory = QFileDialog.getExistingDirectory(window, "Select Directory")
-    if not directory:
+    global selected_directory
+    selected_directory = QFileDialog.getExistingDirectory(window, "Select Directory") 
+    if not selected_directory:
         return
 
-    all_files = sorted(os.listdir(directory))  # Alphabetical (case-sensitive)
+    all_files = sorted(os.listdir(selected_directory))  # Alphabetical (case-sensitive)
     file_list_widget.clear()
     file_paths.clear()
 
     for fname in all_files:
-        full_path = os.path.join(directory, fname)
-        if os.path.isfile(full_path):
-            item = QListWidgetItem(f"{fname} ({os.path.splitext(fname)[1][1:].upper()})")
+        full_path = os.path.join(selected_directory, fname)
+        ext = os.path.splitext(fname)[1].lower()  # Get file extension, lowercase
+        if os.path.isfile(full_path) and ext in ['.tif', '.tiff']:
+            item = QListWidgetItem(f"{fname} ({ext[1:].upper()})")
             item.setCheckState(Qt.Unchecked)
             file_list_widget.addItem(item)
-            file_paths.append(full_path)
+            file_paths.append(full_path) 
 
 # Keep these global to track order of selection
 selected_files_order = []  # store indices of items checked, in order
@@ -536,7 +586,8 @@ def init_gui():
                 )
                 
     # Save the augmented copy to disk
-    with open("data/precomputed_blobs_with_real_info.pkl", "wb") as f:
+    output_path = os.path.join(selected_directory, "precomputed_blobs_with_real_info.pkl")
+    with open(output_path, "wb") as f:
         pickle.dump(blobs_to_save, f) 
         
     progress_bar.hide()
@@ -929,7 +980,7 @@ def init_gui():
         area_slider_layout.addLayout(vbox)
 
     exit_btn = QPushButton("Exit")
-    exit_btn.clicked.connect(window.close)
+    exit_btn.clicked.connect(lambda: (window.close(), app.quit()))
     reset_btn = QPushButton("Reset View")
     reset_btn.clicked.connect(lambda: graphics_view.resetTransform())
 
@@ -1087,8 +1138,9 @@ def init_gui():
                 item.setToolTip(tooltip_text)
         
                 union_list_widget.addItem(item)
-            
-            with open("data/union_blobs.pkl", "wb") as f:
+
+            output_path = os.path.join(selected_directory, "union_blobs.pkl")
+            with open(output_path, "wb") as f:
                 pickle.dump(graphics_view.union_dict, f)
     
             # union_box_drawer(union_dict)
@@ -1192,8 +1244,9 @@ def init_gui():
             custom_box_number = custom_box_number + 1
             
             union_list_widget.addItem(item)
-  
-            with open("data/union_blobs.pkl", "wb") as f:
+
+            output_path = os.path.join(selected_directory, "union_blobs.pkl")
+            with open(output_path, "wb") as f:
                 pickle.dump(graphics_view.union_dict, f)
                 
             # Restore original mouse events and update display
@@ -1242,11 +1295,13 @@ def init_gui():
 
         json_safe_data = make_json_serializable(data)
 
-        with open("data/selected_blobs_to_queue_server.json", "w") as f:
+        output_path = os.path.join(selected_directory, "selected_blobs_to_queue_server.json")
+        with open(output_path, "w") as f:
             json.dump(json_safe_data, f, indent=2)
 
-        structure_blob_tooltips("data/selected_blobs_to_queue_server.json")
-        
+        structure_blob_tooltips(output_path)
+        send_json_boxes_to_queue_with_center_move(output_path)
+
         queue_server_list.clear()
         queue_server_list.addItem("✅ Data sent and saved")
 
