@@ -1,69 +1,90 @@
-import globals as G
+import os
+import sys
+import re
+import time
+import copy
+import json
+import pickle
+import threading
+import multiprocessing
+from collections import Counter
+
+import cv2
+import numpy as np
+import tifffile as tiff
+
+from PyQt5.QtWidgets import (
+    QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
+    QLineEdit, QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
+    QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QScrollArea, QSizePolicy,
+    QGraphicsEllipseItem
+)
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
+from PyQt5.QtCore import Qt, QRect, QTimer
+
+import globals
+from utils import *
+from globals import update_boxes, union_box_drawer, get_current_blobs
+# from globals import *
 
 def on_dir_selected():
-    global selected_directory
-    selected_directory = QFileDialog.getExistingDirectory(window, "Select Directory") 
-    if not selected_directory:
+    globals.selected_directory = QFileDialog.getExistingDirectory(globals.window, "Select Directory") 
+    if not globals.selected_directory:
         return
 
-    all_files = sorted(os.listdir(selected_directory))  # Alphabetical (case-sensitive)
-    file_list_widget.clear()
-    file_paths.clear()
+    all_files = sorted(os.listdir(globals.selected_directory))  # Alphabetical (case-sensitive)
+    globals.file_list_widget.clear()
+    globals.file_paths.clear()
 
     for fname in all_files:
-        full_path = os.path.join(selected_directory, fname)
+        full_path = os.path.join(globals.selected_directory, fname)
         ext = os.path.splitext(fname)[1].lower()  # Get file extension, lowercase
         if os.path.isfile(full_path) and ext in ['.tif', '.tiff']:
             item = QListWidgetItem(f"{fname} ({ext[1:].upper()})")
             item.setCheckState(Qt.Unchecked)
-            file_list_widget.addItem(item)
-            file_paths.append(full_path) 
+            globals.file_list_widget.addItem(item)
+            globals.file_paths.append(full_path) 
 
-def update_selection():
-    global selected_files_order
-
+def update_selection(): 
     # Check which items are checked currently
-    checked_indices = [i for i in range(file_list_widget.count()) if file_list_widget.item(i).checkState() == Qt.Checked]
+    checked_indices = [i for i in range(globals.file_list_widget.count()) if globals.file_list_widget.item(i).checkState() == Qt.Checked]
 
     # Find newly checked or unchecked items by comparing to stored order
     # Remove unchecked items from order
-    selected_files_order = [i for i in selected_files_order if i in checked_indices]
+    globals.selected_files_order = [i for i in globals.selected_files_order if i in checked_indices]
 
     # Add newly checked items at the end
     for i in checked_indices:
-        if i not in selected_files_order:
-            if len(selected_files_order) < 3:
-                selected_files_order.append(i)
+        if i not in globals.selected_files_order:
+            if len(globals.selected_files_order) < 3:
+                globals.selected_files_order.append(i)
             else:
                 # Too many selected, uncheck this item immediately
-                file_list_widget.item(i).setCheckState(Qt.Unchecked)
+                globals.file_list_widget.item(i).setCheckState(Qt.Unchecked)
 
-    # If less than 3 selected, clear img_paths and file_names partially
+    # If less than 3 selected, clear globals.img_paths and globals.file_names partially
     for idx in range(3):
-        if idx < len(selected_files_order):
-            path = file_paths[selected_files_order[idx]]
-            img_paths[idx] = path
-            file_names[idx] = os.path.basename(path)
+        if idx < len(globals.selected_files_order):
+            path = globals.file_paths[globals.selected_files_order[idx]]
+            globals.img_paths[idx] = path
+            globals.file_names[idx] = os.path.basename(path)
         else:
-            img_paths[idx] = None
-            file_names[idx] = None
+            globals.img_paths[idx] = None
+            globals.file_names[idx] = None
 
 def on_confirm_clicked():
-    global microns_per_pixel_x
-    microns_per_pixel_x = float_input_micron_x.value()
-    # print(microns_per_pixel_x)
-    global microns_per_pixel_y
-    microns_per_pixel_y = float_input_micron_y.value()
-    # print(microns_per_pixel_y)
-    global true_origin_x
-    true_origin_x = origin_x_input.value()
-    global true_origin_y
-    true_origin_y = origin_y_input.value()
-    # print(true_origin_x)
-    # print(true_origin_y)
+    globals.microns_per_pixel_x = globals.float_input_micron_x.value()
+    # print(globals.microns_per_pixel_x)
+    globals.microns_per_pixel_y = globals.float_input_micron_y.value()
+    # print(globals.microns_per_pixel_y)
+    globals.true_origin_x = globals.origin_x_input.value()
+    globals.true_origin_y = globals.origin_y_input.value()
+    # print(globals.true_origin_x)
+    # print(globals.true_origin_y)
 
-    if len(selected_files_order) != 3:
-        QMessageBox.warning(window, "Invalid Selection", "Please select exactly 3 items.")
+    if len(globals.selected_files_order) != 3:
+        QMessageBox.warning(globals.window, "Invalid Selection", "Please select exactly 3 items.")
         return
     QApplication.processEvents()
     init_gui()
@@ -78,10 +99,10 @@ def create_manual_scan_tab():
     data_fields = {
         "min_threshold_intensity": None,
         "min_threshold_area": None,
-        "microns_per_pixel_x": None,
-        "microns_per_pixel_y": None,
-        "true_origin_x": None,
-        "true_origin_y": None,
+        "globals.microns_per_pixel_x": None,
+        "globals.microns_per_pixel_y": None,
+        "globals.true_origin_x": None,
+        "globals.true_origin_y": None,
         "number_of_scans": None,
         "debt_names": None,
         "x_motor": None,
@@ -146,7 +167,7 @@ def create_manual_scan_tab():
     return manual_scan_widget
 
 
-class ZoomableGraphicsView(G.QGraphicsView):
+class ZoomableGraphicsView(QGraphicsView):
     def __init__(self, scene, hover_label, x_label, y_label, x_micron_label, y_micron_label):
         super().__init__(scene)
         self.union_objects = []
@@ -159,7 +180,7 @@ class ZoomableGraphicsView(G.QGraphicsView):
         self._drag_active = False
         self.hover_label = hover_label
         self.blobs = []
-        self.visible_colors = set(element_colors)
+        self.visible_colors = set(globals.element_colors)
         self.x_label = x_label
         self.y_label = y_label
         self.x_micron_label = x_micron_label
@@ -199,18 +220,18 @@ class ZoomableGraphicsView(G.QGraphicsView):
         x, y = int(pos.x()), int(pos.y())
         self.x_label.setText(f"X: {x}")
         self.y_label.setText(f"Y: {y}")
-        self.x_micron_label.setText(f"X Real location(µm): {(x * microns_per_pixel_x) + true_origin_x:.2f}")
-        self.y_micron_label.setText(f"Y Real location(µm): {(y * microns_per_pixel_y) + true_origin_y:.2f}")
+        self.x_micron_label.setText(f"X Real location(µm): {(x * globals.microns_per_pixel_x) + globals.true_origin_x:.2f}")
+        self.y_micron_label.setText(f"Y Real location(µm): {(y * globals.microns_per_pixel_y) + globals.true_origin_y:.2f}")
         for blob in self.blobs:
             if blob['color'] not in self.visible_colors:
                 continue
             cx, cy = blob['center']
             r = blob['radius']
             
-            real_w = blob['box_size'] * microns_per_pixel_x
-            real_h = blob['box_size'] * microns_per_pixel_y
-            real_cx = (cx * microns_per_pixel_x) + true_origin_x
-            real_cy = (cy * microns_per_pixel_y) + true_origin_y
+            real_w = blob['box_size'] * globals.microns_per_pixel_x
+            real_h = blob['box_size'] * globals.microns_per_pixel_y
+            real_cx = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+            real_cy = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
 
             if abs(x - cx) <= r and abs(y - cy) <= r:
                 html = (
@@ -219,9 +240,9 @@ class ZoomableGraphicsView(G.QGraphicsView):
                     f"Length: {blob['box_size']} px<br>"
                     f"Box area: {blob['box_size'] * blob['box_size']} px²<br>"
                     f"<br>"
-                    f"Real Center location(µm): ({(cx * microns_per_pixel_x) + true_origin_x:.2f} µm, {(cy * microns_per_pixel_y) + true_origin_y:.2f} µm)<br>"
-                    f"Real box size(µm): ({blob['box_size'] * microns_per_pixel_x:.2f} µm × {blob['box_size'] * microns_per_pixel_y:.2f} µm)<br>"
-                    f"Real box area(µm): ({blob['box_size']**2 * microns_per_pixel_x * microns_per_pixel_y:.2f} µm²)<br>"
+                    f"Real Center location(µm): ({(cx * globals.microns_per_pixel_x) + globals.true_origin_x:.2f} µm, {(cy * globals.microns_per_pixel_y) + globals.true_origin_y:.2f} µm)<br>"
+                    f"Real box size(µm): ({blob['box_size'] * globals.microns_per_pixel_x:.2f} µm × {blob['box_size'] * globals.microns_per_pixel_y:.2f} µm)<br>"
+                    f"Real box area(µm): ({blob['box_size']**2 * globals.microns_per_pixel_x * globals.microns_per_pixel_y:.2f} µm²)<br>"
                     f"Real Top-Left: ({real_cx - real_w / 2:.2f}, {real_cy - real_h / 2:.2f}) µm<br>"
                     f"Real Bottom-Right: ({real_cx + real_w / 2:.2f}, {real_cy + real_h / 2:.2f}) µm<br>"
                     f"<br>"
@@ -238,8 +259,8 @@ class ZoomableGraphicsView(G.QGraphicsView):
                 self.hover_label.show()
                 return 
                 
-        if checkboxes['union'].isChecked():  # actual union box visibility check
-            for ub in global_union_boxes:
+        if globals.checkboxes['union'].isChecked():  # actual union box visibility check
+            for ub in globals.global_union_boxes:
                 if ub['rect'].contains(pos.toPoint()):
                     self.hover_label.setText(ub['text'])
                     self.hover_label.adjustSize()
@@ -287,7 +308,7 @@ class ZoomableGraphicsView(G.QGraphicsView):
 
     
 def redraw_boxes(blobs, selected_colors, onto_img=None):
-    updated_img = onto_img or graphics_view.current_qimage.copy()
+    updated_img = onto_img or globals.graphics_view.current_qimage.copy()
     painter = QPainter(updated_img)
     painter.setRenderHint(QPainter.Antialiasing, False)
     for blob in blobs:
@@ -298,124 +319,47 @@ def redraw_boxes(blobs, selected_colors, onto_img=None):
     painter.end()
 
     if onto_img is None:
-        pixmap_item.setPixmap(QPixmap.fromImage(updated_img))  # if standalone call
-
-
-def union_box_drawer(union_dict, base_img=None, clear_only=False):
-    global global_union_boxes
-    global_union_boxes = []  # Clear old ones
-
-    valid_img = base_img or graphics_view.current_qimage
-
-    if clear_only:
-        pixmap_item.setPixmap(QPixmap.fromImage(valid_img))
-        return              
-        
-    updated_img = valid_img.copy()
-    painter = QPainter(updated_img)
-    painter.setRenderHint(QPainter.Antialiasing, False)
-    painter.setPen(QPen(QColor('white'), 1))
-
-    for idx, ub in union_dict.items():
-        cx, cy = ub['center']
-        length = ub['length']
-        x = int(cx - length / 2)
-        y = int(cy - length / 2)
-        w = h = int(length)
-
-        area = ub['area']
-        real_cx, real_cy = ub['real_center']
-        real_w, real_h = ub['real_size']
-        real_area = ub['real_area']
-        real_tl = ub['real_top_left']
-        real_br = ub['real_bottom_right']
-
-        # Draw box
-        painter.drawRect(x, y, w, h)
-
-        # Exact hover text format
-        hover_text = (
-            f"<b>Union Box #{idx}</b><br>"
-            f"Center: ({cx}, {cy})<br>"
-            f"Length: {length} px<br>"
-            f"Area: {area} px²<br><br>"
-            f"Real Center: ({real_cx:.2f} µm, {real_cy:.2f} µm)<br>"
-            f"Real Size: {real_w:.2f} × {real_h:.2f} µm<br>"
-            f"Real Area: {real_area:.2f} µm²<br><br>"
-            f"Real Top-Left: ({real_tl[0]:.2f}, {real_tl[1]:.2f}) µm<br>"
-            f"Real Bottom-Right: ({real_br[0]:.2f}, {real_br[1]:.2f}) µm"
-        )
-        
-        # Store for hover lookup
-        global_union_boxes.append({
-            'rect': QRect(x, y, w, h),
-            'text': hover_text
-        })
-
-    painter.end()
-    pixmap_item.setPixmap(QPixmap.fromImage(updated_img))
-
-def update_boxes():
-    # nonlocal selected_colors
-    selected_colors = {c for c, cb in checkboxes.items() if cb.isChecked() and c != 'union'}
-
-    # Start from a shared copy of the current base image
-    base_img = graphics_view.current_qimage.copy()
-
-    # Get blobs for selected colors
-    blobs = [b for b in get_current_blobs() if b['color'] in selected_colors]
-    graphics_view.update_blobs(blobs, selected_colors)
-
-    # Draw element boxes on base_img
-    redraw_boxes(blobs, selected_colors, onto_img=base_img)
-
-    # Conditionally draw union boxes on the same image
-    if union_checkbox.isChecked():
-        union_box_drawer(graphics_view.union_dict, base_img=base_img)
-    else:
-        pixmap_item.setPixmap(QPixmap.fromImage(base_img))  # just show element boxes
-
-    hover_label.hide()
+        globals.pixmap_item.setPixmap(QPixmap.fromImage(updated_img))  # if standalone call
 
 def on_slider_change(value, color):
         snapped = round(value / 10) * 10
         snapped = max(0, min(250, snapped))
-        if thresholds[color] != snapped:
-            thresholds[color] = snapped
-            sliders[color].blockSignals(True)
-            sliders[color].setValue(snapped)
-            sliders[color].blockSignals(False)
-            slider_labels[color].setText(f"{checkboxes[color].text()}_threshold: {snapped}")
+        if globals.thresholds[color] != snapped:
+            globals.thresholds[color] = snapped
+            globals.sliders[color].blockSignals(True)
+            globals.sliders[color].setValue(snapped)
+            globals.sliders[color].blockSignals(False)
+            slider_labels[color].setText(f"{globals.checkboxes[color].text()}_threshold: {snapped}")
             update_boxes()
 
 
 def on_area_slider_change(value, color):
     valid_areas = list(range(10, 401, 10)) 
     snapped = min(valid_areas, key=lambda a: abs(a - value))
-    if area_thresholds[color] != snapped:
-        area_thresholds[color] = snapped
-        area_sliders[color].blockSignals(True)
-        area_sliders[color].setValue(snapped)
-        area_sliders[color].blockSignals(False)
-        area_slider_labels[color].setText(f"{checkboxes[color].text()}_min_area: {snapped}")
+    if globals.area_thresholds[color] != snapped:
+        globals.area_thresholds[color] = snapped
+        globals.area_sliders[color].blockSignals(True)
+        globals.area_sliders[color].setValue(snapped)
+        globals.area_sliders[color].blockSignals(False)
+        area_slider_labels[color].setText(f"{globals.checkboxes[color].text()}_min_area: {snapped}")
         update_boxes()
 
 
     
 def add_box():
     # Notify user
-    QMessageBox.information(window, "Add Union Box", "Click and drag to define a new union box.")
+    QMessageBox.information(globals.window, "Add Union Box", "Click and drag to define a new union box.")
 
     temp_state = {'start': None}
 
     def on_press(event):
-        temp_state['start'] = graphics_view.mapToScene(event.pos()).toPoint()
+        temp_state['start'] = globals.graphics_view.mapToScene(event.pos()).toPoint()
 
     def on_release(event):
         if temp_state['start'] is None:
             return
     
-        end = graphics_view.mapToScene(event.pos()).toPoint()
+        end = globals.graphics_view.mapToScene(event.pos()).toPoint()
         start = temp_state['start']
         temp_state['start'] = None
     
@@ -425,19 +369,19 @@ def add_box():
         length = max(abs(x2 - x1), abs(y2 - y1))
         area = length * length
     
-        real_cx = (cx * microns_per_pixel_x) + true_origin_x
-        real_cy = (cy * microns_per_pixel_y) + true_origin_y
-        real_length_x = length * microns_per_pixel_x
-        real_length_y = length * microns_per_pixel_y
+        real_cx = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+        real_cy = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
+        real_length_x = length * globals.microns_per_pixel_x
+        real_length_y = length * globals.microns_per_pixel_y
         real_area = real_length_x * real_length_y
     
         real_top_left = (
-            ((cx - length // 2) * microns_per_pixel_x) + true_origin_x,
-            ((cy - length // 2) * microns_per_pixel_y) + true_origin_y
+            ((cx - length // 2) * globals.microns_per_pixel_x) + globals.true_origin_x,
+            ((cy - length // 2) * globals.microns_per_pixel_y) + globals.true_origin_y
         )
         real_bottom_right = (
-            ((cx + length // 2) * microns_per_pixel_x) + true_origin_x,
-            ((cy + length // 2) * microns_per_pixel_y) + true_origin_y
+            ((cx + length // 2) * globals.microns_per_pixel_x) + globals.true_origin_x,
+            ((cy + length // 2) * globals.microns_per_pixel_y) + globals.true_origin_y
         )
     
         new_union = {
@@ -452,13 +396,13 @@ def add_box():
         }
     
         # Assign next available index in the union dict
-        current_union_dict = graphics_view.union_dict
+        current_union_dict = globals.graphics_view.union_dict
         next_index = max(current_union_dict.keys(), default=0) + 1
         current_union_dict[next_index] = new_union
     
         # Update both object list and dictionary
-        graphics_view.union_objects = list(current_union_dict.values())
-        graphics_view.union_dict = current_union_dict
+        globals.graphics_view.union_objects = list(current_union_dict.values())
+        globals.graphics_view.union_dict = current_union_dict
 
         # Add new item to QListWidget with consistent style/tooltip
         ub = new_union  # The most recently added one
@@ -472,16 +416,14 @@ def add_box():
         real_tl = ub['real_top_left']
         real_br = ub['real_bottom_right']
 
-        global custom_box_number
-
-        item_text = f"Custom Box #{custom_box_number}"
+        item_text = f"Custom Box #{globals.custom_box_number}"
 
         
         item = QListWidgetItem(item_text)
-        item.setData(Qt.UserRole, custom_box_number)
+        item.setData(Qt.UserRole, globals.custom_box_number)
         
         tooltip_text = (
-            f"<b>Custom Box #{custom_box_number}</b><br>"
+            f"<b>Custom Box #{globals.custom_box_number}</b><br>"
             f"Center: ({cx}, {cy})<br>"
             f"Length: {length} px<br>"
             f"Area: {area} px²<br><br>"
@@ -493,45 +435,45 @@ def add_box():
         )
         item.setToolTip(tooltip_text)
 
-        custom_box_number = custom_box_number + 1
+        globals.custom_box_number = globals.custom_box_number + 1
         
-        union_list_widget.addItem(item)
+        globals.union_list_widget.addItem(item)
 
-        output_path = os.path.join(selected_directory, "union_blobs.pkl")
+        output_path = os.path.join(globals.selected_directory, "union_blobs.pkl")
         with open(output_path, "wb") as f:
-            pickle.dump(graphics_view.union_dict, f)
+            pickle.dump(globals.graphics_view.union_dict, f)
             
         # Restore original mouse events and update display
-        graphics_view.mousePressEvent = original_mouse_press
-        graphics_view.mouseReleaseEvent = original_mouse_release
+        globals.graphics_view.mousePressEvent = original_mouse_press
+        globals.graphics_view.mouseReleaseEvent = original_mouse_release
         update_boxes()
 
     # Temporarily override mouse events
-    original_mouse_press = graphics_view.mousePressEvent
-    original_mouse_release = graphics_view.mouseReleaseEvent
-    graphics_view.mousePressEvent = on_press
-    graphics_view.mouseReleaseEvent = on_release
+    original_mouse_press = globals.graphics_view.mousePressEvent
+    original_mouse_release = globals.graphics_view.mouseReleaseEvent
+    globals.graphics_view.mousePressEvent = on_press
+    globals.graphics_view.mouseReleaseEvent = on_release
 
 def on_union_item_selected():
-    selected_items = union_list_widget.selectedItems()
-    graphics_view.highlight_selected_union_boxes(selected_items)
+    selected_items = globals.union_list_widget.selectedItems()
+    globals.graphics_view.highlight_selected_union_boxes(selected_items)
 
 
 def send_to_list():
-    # Collect all existing item texts in queue_server_list
-    existing_texts = {queue_server_list.item(i).text() for i in range(queue_server_list.count())}
+    # Collect all existing item texts in globals.queue_server_list
+    existing_texts = {globals.queue_server_list.item(i).text() for i in range(globals.queue_server_list.count())}
 
-    for item in union_list_widget.selectedItems():
+    for item in globals.union_list_widget.selectedItems():
         if item.text() not in existing_texts:
             new_item = QListWidgetItem(item.text())
             new_item.setToolTip(item.toolTip())
             new_item.setData(Qt.UserRole, item.data(Qt.UserRole))  # preserve index if needed
-            queue_server_list.addItem(new_item)
+            globals.queue_server_list.addItem(new_item)
 
 def send_to_queue_server():
     data = {}
-    for i in range(queue_server_list.count()):
-        item = queue_server_list.item(i)
+    for i in range(globals.queue_server_list.count()):
+        item = globals.queue_server_list.item(i)
         text = item.text()
         tooltip = item.toolTip()
         index = item.data(Qt.UserRole)
@@ -547,28 +489,28 @@ def send_to_queue_server():
 
     json_safe_data = make_json_serializable(data)
 
-    output_path = os.path.join(selected_directory, "selected_blobs_to_queue_server.json")
+    output_path = os.path.join(globals.selected_directory, "selected_blobs_to_queue_server.json")
     with open(output_path, "w") as f:
         json.dump(json_safe_data, f, indent=2)
 
     structure_blob_tooltips(output_path)
     send_json_boxes_to_queue_with_center_move(output_path)
 
-    queue_server_list.clear()
-    queue_server_list.addItem("✅ Data sent and saved")
+    globals.queue_server_list.clear()
+    globals.queue_server_list.addItem("✅ Data sent and saved")
 
 def get_elements_list():    
     # Collect all visible blobs across elements
-    union_list_widget.clear()
+    globals.union_list_widget.clear()
     all_blobs = get_current_blobs()
     for blob in all_blobs:
         cx, cy = blob['center']
         box_size = blob['box_size']
 
-        real_cx = (cx * microns_per_pixel_x) + true_origin_x
-        real_cy = (cy * microns_per_pixel_y) + true_origin_y
-        real_length_x = box_size * microns_per_pixel_x
-        real_length_y = box_size * microns_per_pixel_y
+        real_cx = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+        real_cy = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
+        real_length_x = box_size * globals.microns_per_pixel_x
+        real_length_y = box_size * globals.microns_per_pixel_y
         real_area = real_length_x * real_length_y
 
         # HTML tooltip
@@ -595,7 +537,346 @@ def get_elements_list():
         item.setData(Qt.UserRole, blob)  # Store full blob data if needed later
         item.setData(Qt.ToolTipRole, html)  # So we can show it in a custom hover
 
-        union_list_widget.addItem(item)
+        globals.union_list_widget.addItem(item)
 
 def clear_queue_server_list():    
-    queue_server_list.clear() 
+    globals.queue_server_list.clear() 
+
+
+def init_gui():
+    globals.current_iteration = 0
+    globals.precomputed_blobs = {}
+    
+    # Remove old progress bars if they exist
+    for i in reversed(range(globals.main_layout.count())):
+        widget = globals.main_layout.itemAt(i).widget()
+        if isinstance(widget, QProgressBar):
+            globals.main_layout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+
+    # for btn in buttons:
+    #     btn.setEnabled(False)
+
+    # Load and convert
+    globals.graphics_view, globals.controls_widget
+
+    if globals.graphics_view is not None:
+        globals.main_layout.removeWidget(globals.graphics_view)
+        globals.graphics_view.setParent(None)
+        globals.graphics_view.deleteLater()
+        globals.graphics_view = None
+
+    if globals.controls_widget is not None:
+        globals.main_layout.removeWidget(globals.controls_widget)
+        globals.controls_widget.setParent(None)
+        globals.controls_widget.deleteLater()
+        globals.controls_widget = None
+        
+    img_r, img_g, img_b = [tiff.imread(p).astype(np.float32) for p in globals.img_paths]
+    
+    # Resize to majority shape
+    shapes = [img_r.shape, img_g.shape, img_b.shape]
+    shape_counts = Counter(shapes)
+    globals.target_shape = shape_counts.most_common(1)[0][0]
+    # print(f"Target (majority) shape: {globals.target_shape}")
+    
+    img_r = resize_if_needed(img_r, globals.file_names[0])
+    img_g = resize_if_needed(img_g, globals.file_names[1])
+    img_b = resize_if_needed(img_b, globals.file_names[2])
+
+    norm_dilated = [normalize_and_dilate(im) for im in [img_r, img_g, img_b]]
+    normalized = [nd[0] for nd in norm_dilated]
+    dilated = [nd[1] for nd in norm_dilated]
+
+    thresholds_range = list(range(0, 256, 10))
+    area_range = list(range(10, 501, 10))
+
+    QApplication.processEvents()
+    progress_bar = QProgressBar()
+    progress_bar.setRange(0, len(globals.element_colors) * len(thresholds_range) * len(area_range))
+    progress_bar.setValue(0)
+    progress_bar.setTextVisible(True)
+    progress_bar.setFormat("Computing blobs... %p%")
+    globals.main_layout.addWidget(progress_bar)
+    QApplication.processEvents() 
+    progress_bar.show()
+    QApplication.processEvents()
+    total_iterations = len(globals.element_colors) * len(thresholds_range) * len(area_range)
+    globals.precomputed_blobs = {}
+    
+    QTimer.singleShot(0, lambda: start_blob_computation(
+        globals.element_colors,
+        thresholds_range,
+        area_range,
+        globals.precomputed_blobs,
+        dilated,
+        img_r,
+        img_g,
+        img_b,
+        globals.file_names,
+        progress_bar
+    )) 
+ 
+    os.makedirs("data", exist_ok=True)
+
+    QApplication.processEvents()
+
+    # Make a deep copy so original data stays untouched
+    blobs_to_save = copy.deepcopy(globals.precomputed_blobs)    
+    # Add real-world info and tooltip HTML to copied blobs
+    for color in blobs_to_save:
+        for key in blobs_to_save[color]:
+            for blob in blobs_to_save[color][key]:
+                cx, cy = blob['center']
+    
+                # Calculate real-world values
+                real_center_x = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+                real_center_y = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
+                real_box_size_x = blob['box_size'] * globals.microns_per_pixel_x
+                real_box_size_y = blob['box_size'] * globals.microns_per_pixel_y
+                real_box_area = (blob['box_size'] ** 2) * globals.microns_per_pixel_x * globals.microns_per_pixel_y
+    
+                # Store real-world values
+                blob['real_center'] = (real_center_x, real_center_y)
+                blob['real_box_size'] = (real_box_size_x, real_box_size_y)
+                blob['real_box_area'] = real_box_area
+
+                real_w = blob['box_size'] * globals.microns_per_pixel_x
+                real_h = blob['box_size'] * globals.microns_per_pixel_y
+                real_cx = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+                real_cy = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
+                real_tl_x = real_cx - real_w / 2
+                real_tl_y = real_cy - real_h / 2
+                real_br_x = real_cx + real_w / 2
+                real_br_y = real_cy + real_h / 2
+
+                real_w = blob['box_size'] * globals.microns_per_pixel_x
+                real_h = blob['box_size'] * globals.microns_per_pixel_y
+                real_cx = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+                real_cy = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
+                
+                # Compose tooltip HTML
+                blob['tooltip_html'] = (
+                    f"{blob['Box']}<br>"
+                    f"Center: ({cx}, {cy})<br>"
+                    f"Length: {blob['box_size']} px<br>"
+                    f"Box area: {blob['box_size'] * blob['box_size']} px²<br>"
+                    f"<br>"
+                    f"Real Center location(µm): ({real_center_x:.2f} µm, {real_center_y:.2f} µm)<br>"
+                    f"Real box size(µm): ({real_box_size_x:.2f} µm × {real_box_size_y:.2f} µm)<br>"
+                    f"Real box area(µm²): {real_box_area:.2f} µm²<br>"
+                    f"Real Top-Left: ({real_cx - real_w / 2:.2f}, {real_cy - real_h / 2:.2f}) µm<br>"
+                    f"Real Bottom-Right: ({real_cx + real_w / 2:.2f}, {real_cy + real_h / 2:.2f}) µm<br>"
+                    f"<br>"
+                    f"Max intensity: {blob['max_intensity']:.3f}<br>"
+                    f"Mean intensity: {blob['mean_intensity']:.3f}<br>"
+                    f"Mean dilation intensity: {blob['mean_dilation']:.1f}"
+                )
+                
+    # Save the augmented copy to disk
+    output_path = os.path.join(globals.selected_directory, "precomputed_blobs_with_real_info.pkl")
+    with open(output_path, "wb") as f:
+        pickle.dump(blobs_to_save, f) 
+        
+    progress_bar.hide()
+    QApplication.processEvents()
+
+    # print(time.strftime('%H:%M:%S'))
+    globals.thresholds = {color: 100 for color in globals.element_colors}
+    globals.area_thresholds = {color: 200 for color in globals.element_colors}
+    
+    merged_rgb = cv2.merge([
+        cv2.normalize(img_r, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8),
+        cv2.normalize(img_g, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8),
+        cv2.normalize(img_b, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    ])
+
+    hover_label = QLabel()
+    hover_label.setWindowFlags(Qt.ToolTip)
+    hover_label.hide()
+
+    x_label = QLabel("X: 0")
+    y_label = QLabel("Y: 0")
+
+    x_micron_label = QLabel("X Real: 0")
+    y_micron_label = QLabel("Y Real: 0")
+    
+    scene = QGraphicsScene()
+    q_img = QImage(merged_rgb.data, merged_rgb.shape[1], merged_rgb.shape[0], merged_rgb.shape[1] * 3, QImage.Format_RGB888)
+
+    globals.graphics_view = ZoomableGraphicsView(scene, hover_label, x_label, y_label, x_micron_label, y_micron_label)
+    globals.graphics_view.current_qimage = q_img
+    globals.pixmap_item = QGraphicsPixmapItem(QPixmap.fromImage(globals.graphics_view.current_qimage))
+    scene.addItem(globals.pixmap_item)
+    globals.main_layout.addWidget(globals.graphics_view)
+
+    globals.checkboxes = {}
+    selected_colors = set(globals.element_colors)
+ 
+    legend_layout = QVBoxLayout()
+    legend_label = QLabel("Legend")
+    legend_label.setStyleSheet("font-weight: bold; font-size: 12pt;")
+    legend_layout.addWidget(legend_label)
+    for i, color in enumerate(globals.element_colors):
+        cb = QCheckBox(globals.file_names[i])
+        cb.setChecked(True)
+        cb.setStyleSheet(f"color: {color}")
+        cb.stateChanged.connect(update_boxes)
+        globals.checkboxes[color] = cb
+        legend_layout.addWidget(cb)
+
+    globals.union_checkbox = QCheckBox("Union Boxes")
+    globals.union_checkbox.setChecked(True)
+    globals.union_checkbox.setStyleSheet("color: black")
+    globals.union_checkbox.stateChanged.connect(update_boxes)
+    legend_layout.addWidget(globals.union_checkbox)
+    globals.checkboxes['union'] = globals.union_checkbox
+
+
+    legend_layout.addStretch()
+
+    globals.sliders = {}
+    slider_labels = {}
+    slider_layout = QHBoxLayout()
+        
+    for color in globals.element_colors:
+        i = globals.element_colors.index(color)
+        vbox = QVBoxLayout()
+        label = QLabel(f"{globals.file_names[i]}_threshold: {globals.thresholds[color]}")
+        slider = QSlider(Qt.Horizontal)
+        slider.setMinimum(0)
+        slider.setMaximum(255)
+        slider.setTickInterval(10)
+        slider.setValue(globals.thresholds[color])
+        slider.setTickPosition(QSlider.TicksBelow)
+        slider.valueChanged.connect(lambda val, c=color: on_slider_change(val, c))
+        globals.sliders[color] = slider
+        slider_labels[color] = label
+        vbox.addWidget(label)
+        vbox.addWidget(slider)
+        slider_layout.addLayout(vbox)
+
+    globals.area_sliders = {}
+    area_slider_labels = {}
+
+    area_slider_layout = QHBoxLayout()
+    
+    for color in globals.element_colors:
+        i = globals.element_colors.index(color)
+        vbox = QVBoxLayout()
+        label = QLabel(f"{globals.file_names[i]}_min_area: {globals.area_thresholds[color]}")
+        slider = QSlider(Qt.Horizontal)
+        slider.setMinimum(10)
+        slider.setMaximum(400)
+        slider.setTickInterval(10)
+        slider.setValue(globals.area_thresholds[color])
+        slider.setTickPosition(QSlider.TicksBelow)
+        slider.valueChanged.connect(lambda val, c=color: on_area_slider_change(val, c))
+        globals.area_sliders[color] = slider
+        area_slider_labels[color] = label
+        vbox.addWidget(label)
+        vbox.addWidget(slider)
+        area_slider_layout.addLayout(vbox)
+
+    exit_btn = QPushButton("Exit")
+    exit_btn.clicked.connect(lambda: (globals.window.close(), app.quit()))
+    reset_btn = QPushButton("Reset View")
+    reset_btn.clicked.connect(lambda: globals.graphics_view.resetTransform())
+        
+    add_btn = QPushButton("Add custom box")
+    add_btn.clicked.connect(add_box)
+    
+    union_btn = QPushButton("Get current unions")
+    union_btn.clicked.connect(union_function)
+
+    globals.union_list_widget = QListWidget()
+    globals.union_list_widget.setSelectionMode(QListWidget.MultiSelection)  # Allow multiple selection
+    globals.union_list_widget.setMinimumHeight(200)
+    globals.union_list_widget.itemSelectionChanged.connect(on_union_item_selected)
+    globals.union_list_widget.setLineWidth(1)
+    globals.union_list_widget.setStyleSheet("""
+        QListWidget {
+            border: 1px solid #aaa;
+            border-radius: 4px;
+            background-color: #fdfdfd;
+        }
+        QListWidget::item {
+            padding: 8px;
+            border-bottom: 1px solid #ccc;  /* ← This creates the line */
+        }
+        QListWidget::item:selected {
+            background-color: #007acc;
+            color: white;
+            font-weight: bold;
+            border: 1px solid #005b9f;
+        }
+        QListWidget::item:hover {
+            background-color: #e0f0ff;
+        }
+    """)
+    globals.union_list_widget.setMouseTracking(True)  # Required for hover without clicking
+    globals.union_list_widget.setEnabled(True)
+
+    globals.queue_server_list = QListWidget()
+    globals.queue_server_list.setMinimumHeight(200)
+    globals.queue_server_list.setLineWidth(1)
+
+    send_to_list_btn = QPushButton("Add to Queue server List")
+    send_to_list_btn.clicked.connect(send_to_list)
+
+    send_elements_to_list_btn = QPushButton("Add all individual element scans to list")
+    send_elements_to_list_btn.clicked.connect(get_elements_list)
+
+    send_to_queue_server_btn = QPushButton("Send to Queue server List")    
+    send_to_queue_server_btn.clicked.connect(send_to_queue_server)
+
+    clear_queue_server_btn = QPushButton("Clear")    
+    clear_queue_server_btn.clicked.connect(clear_queue_server_list)
+
+    union_list_layout = QVBoxLayout()
+    union_list_layout.addWidget(globals.union_list_widget)
+    union_list_layout.addWidget(send_to_list_btn)
+    union_list_layout.addWidget(send_elements_to_list_btn)
+    union_list_layout.addWidget(union_btn)
+    union_list_layout.addWidget(add_btn)
+
+    queue_server_list_layout = QVBoxLayout()
+    queue_server_list_layout.addWidget(globals.queue_server_list)
+    queue_server_list_layout.addWidget(send_to_queue_server_btn)
+    queue_server_list_layout.addWidget(clear_queue_server_btn)
+
+    dual_list_layout = QHBoxLayout()
+    dual_list_layout.addLayout(union_list_layout)
+    dual_list_layout.addLayout(queue_server_list_layout)
+
+    controls = QVBoxLayout()
+    controls.addWidget(exit_btn)
+    controls.addWidget(reset_btn)
+    
+    controls.addLayout(dual_list_layout)
+    # controls.addWidget(globals.union_list_widget)
+    controls.addWidget(send_to_list_btn)
+    controls.addWidget(send_to_queue_server_btn)
+    controls.addLayout(legend_layout)
+    controls.addLayout(slider_layout)
+    controls.addLayout(area_slider_layout)
+    controls.addWidget(x_label)
+    controls.addWidget(y_label)
+    controls.addWidget(x_micron_label)
+    controls.addWidget(y_micron_label)
+
+    layout = QHBoxLayout()
+    layout.addWidget(globals.graphics_view)
+    side_panel = QWidget()
+    side_panel.setLayout(controls)
+    globals.controls_widget = side_panel
+    layout.addWidget(side_panel)
+
+    globals.main_layout.addLayout(layout)
+    hover_label.setParent(globals.window)
+
+    blobs = get_current_blobs()
+    globals.graphics_view.update_blobs(blobs, selected_colors)
+    redraw_boxes(blobs, selected_colors)
+    globals.window.resize(1900, 1000)

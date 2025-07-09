@@ -1,4 +1,30 @@
+import os
+import sys
+import re
+import time
+import copy
+import json
+import pickle
+import threading
+import multiprocessing
+from collections import Counter
+
+import cv2
+import numpy as np
+import tifffile as tiff
+
+from PyQt5.QtWidgets import (
+    QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
+    QLineEdit, QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
+    QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QScrollArea, QSizePolicy,
+    QGraphicsEllipseItem
+)
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
+from PyQt5.QtCore import Qt, QRect, QTimer
+
 import globals
+from globals import update_boxes, union_box_drawer, get_current_blobs
 
 def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25):
     """
@@ -122,14 +148,13 @@ def start_blob_computation(
     file_names,
     progress_bar,
 ):
-    global current_iteration
     # Prepare shared variables
     progress_lock = threading.Lock()
     
     # Flatten tasks: (color_index, threshold, area)
     task_list = [
         (i, t, a)
-        for i, color in enumerate(element_colors)
+        for i, color in enumerate(globals.element_colors)
         for t in thresholds_range
         for a in area_range
     ]
@@ -146,14 +171,13 @@ def start_blob_computation(
     
     for chunk in chunks:
         def thread_func(ch=chunk):
-            global current_iteration
             for i, t_val, a_val in ch:
-                color = element_colors[i]
+                color = globals.element_colors[i]
     
                 # Ensure key exists
                 with progress_lock:
-                    if color not in precomputed_blobs:
-                        precomputed_blobs[color] = {}
+                    if color not in globals.precomputed_blobs:
+                        globals.precomputed_blobs[color] = {}
     
                 result = detect_blobs(
                     dilated[i],
@@ -161,13 +185,13 @@ def start_blob_computation(
                     t_val,
                     a_val,
                     color,
-                    file_names[i]
+                    globals.file_names[i]
                 )
     
                 with progress_lock:
-                    precomputed_blobs[color][(t_val, a_val)] = result
-                    current_iteration += 1
-                    progress_bar.setValue(current_iteration)
+                    globals.precomputed_blobs[color][(t_val, a_val)] = result
+                    globals.current_iteration += 1
+                    progress_bar.setValue(globals.current_iteration)
                     QApplication.processEvents()
     
         t = threading.Thread(target=thread_func)
@@ -237,28 +261,10 @@ def structure_blob_tooltips(json_path):
 
     # print(f"✅ Structured tooltip data saved to {json_path}")
 
-def get_current_blobs():
-    blobs = []
-    for color in element_colors:
-        thresh = thresholds[color]
-        area = area_thresholds[color]
-        
-        # Snap area to nearest available area_range value (optional, if mismatch risk exists)
-        available_areas = list(range(10, 501, 10))
-        snapped_area = min(available_areas, key=lambda a: abs(a - area))
-        
-        key = (thresh, snapped_area)
-        blobs_for_color = precomputed_blobs[color].get(key, [])
-        
-        filtered = blobs_for_color  # no need to filter again, already done
-
-        blobs.extend(filtered)
-    return blobs
-
 def resize_if_needed(img, name):
-        if img.shape != target_shape:
-            # print(f"Resizing {name} from {img.shape} → {target_shape}")
-            return cv2.resize(img, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_AREA)
+        if img.shape != globals.target_shape:
+            # print(f"Resizing {name} from {img.shape} → {globals.target_shape}")
+            return cv2.resize(img, (globals.target_shape[1], globals.target_shape[0]), interpolation=cv2.INTER_AREA)
         return img
 
 def normalize_and_dilate(img):
@@ -324,18 +330,18 @@ def union_box_dimensions(b1, b2, b3):
             
 
 def union_function():
-        base_img = graphics_view.current_qimage
+        base_img = globals.graphics_view.current_qimage
         snapped_thresholds = {}
         snapped_areas = {}
-        for color in element_colors:
-            threshold_val = sliders[color].value()
-            area_val = area_sliders[color].value()
+        for color in globals.element_colors:
+            threshold_val = globals.sliders[color].value()
+            area_val = globals.area_sliders[color].value()
             snapped_thresholds[color] = round(threshold_val / 10) * 10
             snapped_areas[color] = round(area_val / 10) * 10
     
         blobs = get_current_blobs()  
     
-        blobs_by_color = {color: [] for color in element_colors}
+        blobs_by_color = {color: [] for color in globals.element_colors}
         for blob in blobs:
             blobs_by_color[blob['color']].append(blob)
 
@@ -359,19 +365,19 @@ def union_function():
                         bottom_right_x = top_left_x + length
                         bottom_right_y = top_left_y + length
         
-                        real_cx = (cx * microns_per_pixel_x) + true_origin_x
-                        real_cy = (cy * microns_per_pixel_y) + true_origin_y
-                        real_length_x = length * microns_per_pixel_x
-                        real_length_y = length * microns_per_pixel_y
+                        real_cx = (cx * globals.microns_per_pixel_x) + globals.true_origin_x
+                        real_cy = (cy * globals.microns_per_pixel_y) + globals.true_origin_y
+                        real_length_x = length * globals.microns_per_pixel_x
+                        real_length_y = length * globals.microns_per_pixel_y
                         real_area = real_length_x * real_length_y
         
                         real_top_left = (
-                            (top_left_x * microns_per_pixel_x) + true_origin_x,
-                            (top_left_y * microns_per_pixel_y) + true_origin_y
+                            (top_left_x * globals.microns_per_pixel_x) + globals.true_origin_x,
+                            (top_left_y * globals.microns_per_pixel_y) + globals.true_origin_y
                         )
                         real_bottom_right = (
-                            (bottom_right_x * microns_per_pixel_x) + true_origin_x,
-                            (bottom_right_y * microns_per_pixel_y) + true_origin_y
+                            (bottom_right_x * globals.microns_per_pixel_x) + globals.true_origin_x,
+                            (bottom_right_y * globals.microns_per_pixel_y) + globals.true_origin_y
                         )
         
                         union_obj = {
@@ -387,13 +393,13 @@ def union_function():
         
                         union_objects[union_index] = union_obj
                         union_index += 1
-        
-        graphics_view.union_objects = list(union_objects.values())
-        graphics_view.union_dict = union_objects
+
+        globals.graphics_view.union_objects = list(union_objects.values())
+        globals.graphics_view.union_dict = union_objects
 
         # Update the label
-        if graphics_view.union_objects:
-            union_list_widget.clear()
+        if globals.graphics_view.union_objects:
+            globals.union_list_widget.clear()
         
             for idx, ub in union_objects.items():
                 cx, cy = ub['center']
@@ -425,15 +431,17 @@ def union_function():
                 )
                 item.setToolTip(tooltip_text)
         
-                union_list_widget.addItem(item)
+                globals.union_list_widget.addItem(item)
 
-            output_path = os.path.join(selected_directory, "union_blobs.pkl")
+            output_path = os.path.join(globals.selected_directory, "union_blobs.pkl")
             with open(output_path, "wb") as f:
-                pickle.dump(graphics_view.union_dict, f)
+                pickle.dump(globals.graphics_view.union_dict, f)
     
             # union_box_drawer(union_dict)
-            union_box_drawer(graphics_view.union_dict, base_img=base_img)
+            union_box_drawer(globals.graphics_view.union_dict, base_img=base_img)
             update_boxes()
         else:
-            union_list_widget.clear()
-            union_list_widget.addItem("No triple overlaps found.")
+            globals.union_list_widget.clear()
+            globals.union_list_widget.addItem("No triple overlaps found.")
+
+        return union_objects
