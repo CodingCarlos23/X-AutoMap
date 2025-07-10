@@ -25,7 +25,7 @@ from PyQt5.QtCore import Qt, QRect, QTimer
 
 import globals
 from utils import *
-from globals import update_boxes, union_box_drawer, get_current_blobs
+from globals import update_boxes, union_box_drawer, get_current_blobs, redraw_boxes
 # from globals import *
 
 def on_dir_selected():
@@ -116,9 +116,10 @@ def create_manual_scan_tab():
 
     # Dictionary to store references to input fields
     input_fields = {}
-
     manual_scan_widget = QWidget()
     manual_scan_layout = QVBoxLayout()
+
+    input_rows = []
 
     # Create input fields
     for key in data_fields:
@@ -129,40 +130,70 @@ def create_manual_scan_tab():
         row.addWidget(label)
         row.addWidget(line_edit)
         manual_scan_layout.addLayout(row)
+        input_rows.append((label, line_edit))  # Save widgets to hide later
 
     # Create the send button
     send_first_scan_btn = QPushButton("Send First Scan")
+    manual_scan_layout.addWidget(send_first_scan_btn)
 
-    # Button click handler
+    # Waiting label (initially hidden)
+    waiting_label = QLabel("Waiting for files to be generated...")
+    waiting_label.setAlignment(Qt.AlignCenter)
+    waiting_label.setStyleSheet("font-size: 16px; color: gray;")
+    waiting_label.hide()
+    manual_scan_layout.addWidget(waiting_label)
+
+    # Setup timer
+    timer = QTimer()
+    timer.setInterval(1000)  # Check every 1 second
+
+    def check_for_tiffs():
+        expected_files = {"file1.tiff", "file2.tiff", "file3.tiff"}
+        found_files = set(os.listdir(os.getcwd()))
+        if expected_files.issubset(found_files):
+            timer.stop()
+            waiting_label.setText("✅ Files generated!")
+
+    def check_for_tiffs():
+        all_files = os.listdir(os.getcwd())
+        tiff_files = {f for f in all_files if f.lower().endswith('.tiff')}
+        if len(tiff_files) >= 3:
+            timer.stop()
+            waiting_label.setText("✅ 3 TIFF files detected!")
+
     def handle_send_scan():
         scan_data = {}
         for key, line_edit in input_fields.items():
             text = line_edit.text().strip()
-            # Attempt to convert to number if possible
             if text == "":
                 scan_data[key] = None
             else:
                 try:
-                    # Float first, then int fallback
                     value = float(text)
                     if value.is_integer():
                         value = int(value)
                     scan_data[key] = value
                 except ValueError:
-                    scan_data[key] = text  # Leave as string if not a number
+                    scan_data[key] = text
 
-        # Save as JSON file
-        file_path, _ = QFileDialog.getSaveFileName(
-            None, "Save Scan Parameters", "", "JSON Files (*.json)"
-        )
-        if file_path:
-            with open(file_path, "w") as f:
-                json.dump(scan_data, f, indent=4)
-            print(f"Scan parameters saved to: {file_path}")
+        file_path = os.path.join(os.getcwd(), "first_scan.json")
+        with open(file_path, "w") as f:
+            json.dump(scan_data, f, indent=4)
+        print(f"Scan parameters saved to: {file_path}")
+
+        # Hide all inputs
+        for label, edit in input_rows:
+            label.hide()
+            edit.hide()
+        send_first_scan_btn.hide()
+
+        # Show waiting label and start timer
+        waiting_label.show()
+        timer.start()
+        blobs = first_scan_detect_blobs()
 
     send_first_scan_btn.clicked.connect(handle_send_scan)
-    manual_scan_layout.addWidget(send_first_scan_btn)
-
+    timer.timeout.connect(check_for_tiffs)
     manual_scan_widget.setLayout(manual_scan_layout)
     return manual_scan_widget
 
@@ -178,7 +209,7 @@ class ZoomableGraphicsView(QGraphicsView):
         self.setMouseTracking(True)
         self.setDragMode(QGraphicsView.NoDrag)
         self._drag_active = False
-        self.hover_label = hover_label
+        self.hover_label = globals.hover_label
         self.blobs = []
         self.visible_colors = set(globals.element_colors)
         self.x_label = x_label
@@ -268,7 +299,7 @@ class ZoomableGraphicsView(QGraphicsView):
                     self.hover_label.setStyleSheet(
                         "background-color: white; color: black; border: 1px solid black; padding: 4px;"
                     )
-                    self.hover_label.show()
+                    self.globals.hover_label.show()
                     return
 
 
@@ -306,21 +337,6 @@ class ZoomableGraphicsView(QGraphicsView):
                 self.scene().addItem(circle)
                 self.highlight_items.append(circle)
 
-    
-def redraw_boxes(blobs, selected_colors, onto_img=None):
-    updated_img = onto_img or globals.graphics_view.current_qimage.copy()
-    painter = QPainter(updated_img)
-    painter.setRenderHint(QPainter.Antialiasing, False)
-    for blob in blobs:
-        if blob['color'] in selected_colors:
-            cx, cy, r = *blob['center'], blob['radius']
-            painter.setPen(QPen(QColor(blob['color']), 1))
-            painter.drawRect(cx - r, cy - r, 2 * r, 2 * r)
-    painter.end()
-
-    if onto_img is None:
-        globals.pixmap_item.setPixmap(QPixmap.fromImage(updated_img))  # if standalone call
-
 def on_slider_change(value, color):
         snapped = round(value / 10) * 10
         snapped = max(0, min(250, snapped))
@@ -329,7 +345,7 @@ def on_slider_change(value, color):
             globals.sliders[color].blockSignals(True)
             globals.sliders[color].setValue(snapped)
             globals.sliders[color].blockSignals(False)
-            slider_labels[color].setText(f"{globals.checkboxes[color].text()}_threshold: {snapped}")
+            globals.slider_labels[color].setText(f"{globals.checkboxes[color].text()}_threshold: {snapped}")
             update_boxes()
 
 
@@ -341,7 +357,7 @@ def on_area_slider_change(value, color):
         globals.area_sliders[color].blockSignals(True)
         globals.area_sliders[color].setValue(snapped)
         globals.area_sliders[color].blockSignals(False)
-        area_slider_labels[color].setText(f"{globals.checkboxes[color].text()}_min_area: {snapped}")
+        globals.area_slider_labels[color].setText(f"{globals.checkboxes[color].text()}_min_area: {snapped}")
         update_boxes()
 
 
@@ -475,6 +491,10 @@ def send_to_queue_server():
     for i in range(globals.queue_server_list.count()):
         item = globals.queue_server_list.item(i)
         text = item.text()
+
+        if "✅" in text or "Data sent and saved" in text:
+            continue
+
         tooltip = item.toolTip()
         index = item.data(Qt.UserRole)
 
@@ -692,9 +712,9 @@ def init_gui():
         cv2.normalize(img_b, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
     ])
 
-    hover_label = QLabel()
-    hover_label.setWindowFlags(Qt.ToolTip)
-    hover_label.hide()
+    globals.hover_label = QLabel()
+    globals.hover_label.setWindowFlags(Qt.ToolTip)
+    globals.hover_label.hide()
 
     x_label = QLabel("X: 0")
     y_label = QLabel("Y: 0")
@@ -705,7 +725,7 @@ def init_gui():
     scene = QGraphicsScene()
     q_img = QImage(merged_rgb.data, merged_rgb.shape[1], merged_rgb.shape[0], merged_rgb.shape[1] * 3, QImage.Format_RGB888)
 
-    globals.graphics_view = ZoomableGraphicsView(scene, hover_label, x_label, y_label, x_micron_label, y_micron_label)
+    globals.graphics_view = ZoomableGraphicsView(scene, globals.hover_label, x_label, y_label, x_micron_label, y_micron_label)
     globals.graphics_view.current_qimage = q_img
     globals.pixmap_item = QGraphicsPixmapItem(QPixmap.fromImage(globals.graphics_view.current_qimage))
     scene.addItem(globals.pixmap_item)
@@ -737,7 +757,7 @@ def init_gui():
     legend_layout.addStretch()
 
     globals.sliders = {}
-    slider_labels = {}
+    globals.slider_labels = {}
     slider_layout = QHBoxLayout()
         
     for color in globals.element_colors:
@@ -752,13 +772,13 @@ def init_gui():
         slider.setTickPosition(QSlider.TicksBelow)
         slider.valueChanged.connect(lambda val, c=color: on_slider_change(val, c))
         globals.sliders[color] = slider
-        slider_labels[color] = label
+        globals.slider_labels[color] = label
         vbox.addWidget(label)
         vbox.addWidget(slider)
         slider_layout.addLayout(vbox)
 
     globals.area_sliders = {}
-    area_slider_labels = {}
+    globals.area_slider_labels = {}
 
     area_slider_layout = QHBoxLayout()
     
@@ -774,13 +794,13 @@ def init_gui():
         slider.setTickPosition(QSlider.TicksBelow)
         slider.valueChanged.connect(lambda val, c=color: on_area_slider_change(val, c))
         globals.area_sliders[color] = slider
-        area_slider_labels[color] = label
+        globals.area_slider_labels[color] = label
         vbox.addWidget(label)
         vbox.addWidget(slider)
         area_slider_layout.addLayout(vbox)
 
     exit_btn = QPushButton("Exit")
-    exit_btn.clicked.connect(lambda: (globals.window.close(), app.quit()))
+    exit_btn.clicked.connect(lambda: (globals.window.close(), globals.app.quit()))
     reset_btn = QPushButton("Reset View")
     reset_btn.clicked.connect(lambda: globals.graphics_view.resetTransform())
         
@@ -874,7 +894,7 @@ def init_gui():
     layout.addWidget(side_panel)
 
     globals.main_layout.addLayout(layout)
-    hover_label.setParent(globals.window)
+    globals.hover_label.setParent(globals.window)
 
     blobs = get_current_blobs()
     globals.graphics_view.update_blobs(blobs, selected_colors)

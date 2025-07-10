@@ -1,27 +1,27 @@
-# import os
-# import sys
-# import re
-# import time
-# import copy
-# import json
-# import pickle
-# import threading
-# import multiprocessing
-# from collections import Counter
+import os
+import sys
+import re
+import time
+import copy
+import json
+import pickle
+import threading
+import multiprocessing
+from collections import Counter
 
-# import cv2
-# import numpy as np
-# import tifffile as tiff
+import cv2
+import numpy as np
+import tifffile as tiff
 
-# from PyQt5.QtWidgets import (
-#     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
-#     QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-#     QLineEdit, QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
-#     QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QScrollArea, QSizePolicy,
-#     QGraphicsEllipseItem
-# )
-# from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
-# from PyQt5.QtCore import Qt, QRect, QTimer
+from PyQt5.QtWidgets import (
+    QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
+    QLineEdit, QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
+    QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QScrollArea, QSizePolicy,
+    QGraphicsEllipseItem
+)
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
+from PyQt5.QtCore import Qt, QRect, QTimer
 
 
 window = None
@@ -171,6 +171,26 @@ def union_box_drawer(union_dict, base_img=None, clear_only=False):
     painter.end()
     pixmap_item.setPixmap(QPixmap.fromImage(updated_img))
 
+def redraw_boxes(blobs, selected_colors, onto_img=None):
+    updated_img = onto_img or graphics_view.current_qimage.copy()
+    painter = QPainter(updated_img)
+    painter.setRenderHint(QPainter.Antialiasing, False)
+    for blob in blobs:
+        if blob['color'] in selected_colors:
+            cx, cy, r = *blob['center'], blob['radius']
+            painter.setPen(QPen(QColor(blob['color']), 1))
+            painter.drawRect(cx - r, cy - r, 2 * r, 2 * r)
+    painter.end()
+
+    if onto_img is None:
+        pixmap_item.setPixmap(QPixmap.fromImage(updated_img))  # if standalone call
+
 custom_box = None
 
 custom_box_number = None
+
+slider_labels = None
+
+area_slider_labels = None
+
+hover_label = None

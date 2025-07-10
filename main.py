@@ -46,7 +46,7 @@ globals.selected_directory = None
 globals.selected_files_order = []
 
 
-app = QApplication(sys.argv)
+globals.app = QApplication(sys.argv)
 globals.window = QWidget()
 globals.window.setWindowTitle("Multi-Element Image Analyzer")
 globals.window.resize(600, 500)
@@ -121,17 +121,6 @@ globals.current_iteration = 0
 #Custom Box Counter
 globals.custom_box_number = 1
 
-
-
-
-
-
-
-
-
-
-
-
 layout_wrapper = QWidget()
 layout_wrapper.setLayout(globals.main_layout)
 tabs = QTabWidget()
@@ -144,4 +133,4 @@ screen.addWidget(tabs)
 
 globals.window.setLayout(screen)
 globals.window.show()
-sys.exit(app.exec_())
+sys.exit(globals.app.exec_())

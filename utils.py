@@ -8,6 +8,7 @@ import pickle
 import threading
 import multiprocessing
 from collections import Counter
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -202,6 +203,72 @@ def start_blob_computation(
     for t in threads:
         t.join()
 
+def first_scan_detect_blobs():
+    COLOR_ORDER = [
+        'red', 'blue', 'green', 'orange', 'purple',
+        'cyan', 'olive', 'yellow', 'brown', 'pink'
+    ]
+    watch_dir = Path(os.getcwd())
+    json_path = watch_dir / "first_scan.json"
+    precomputed_blobs = {color: {} for color in COLOR_ORDER}
+
+    # --- STEP 1: Load JSON ---
+    with open(json_path, "r") as f:
+        data = json.load(f)
+        if isinstance(data, dict):
+            json_items = [[key, value] for key, value in data.items()]
+        else:
+            json_items = [data]
+
+    print("\n✅ Loaded JSON:")
+    for pair in json_items:
+        print(pair)
+
+    # --- STEP 2: Get expected number of TIFF files ---
+    try:
+        expected_tiff_count = int(json_items[6][1])
+    except (IndexError, ValueError) as e:
+        print(f"❌ Error extracting expected TIFF count from JSON: {e}")
+        return None
+
+    if expected_tiff_count > len(COLOR_ORDER):
+        print(f"❌ Too many TIFF files requested. Max supported: {len(COLOR_ORDER)}")
+        return None
+
+    # --- STEP 3: Wait for TIFF files ---
+    print(f"\n🔍 Waiting for {expected_tiff_count} unique .tiff files...")
+    while True:
+        tiff_files = sorted({f for f in os.listdir(watch_dir) if f.endswith(".tiff")})
+        if len(tiff_files) >= expected_tiff_count:
+            selected_tiffs = tiff_files[:expected_tiff_count]
+            break
+        time.sleep(1)
+
+    print("\n✅ Found required TIFF files:")
+    for idx, fname in enumerate(selected_tiffs):
+        print(f"{COLOR_ORDER[idx].capitalize()}: {fname}")
+
+    # --- STEP 4: Process TIFF files ---
+    for idx, tiff_name in enumerate(selected_tiffs):
+        color = COLOR_ORDER[idx]
+        tiff_path = watch_dir / tiff_name
+        try:
+            tiff_img = tiff.imread(str(tiff_path)).astype(np.float32)
+            norm, dilated = normalize_and_dilate(tiff_img)
+            threshold = json_items[0][1]
+            min_area = json_items[1][1]
+            blobs = detect_blobs(dilated, norm, threshold, min_area, color, tiff_name)
+            precomputed_blobs[color][(threshold, min_area)] = blobs
+        except Exception as e:
+            print(f"❌ Error processing {tiff_name}: {e}")
+
+    # --- Done ---
+    print("\n✅ Precomputed blobs:")
+    for color, data in precomputed_blobs.items():
+        if data:
+            print(f"{color}: {data}")
+
+    return precomputed_blobs
 
 def structure_blob_tooltips(json_path):
     """
@@ -445,3 +512,58 @@ def union_function():
             globals.union_list_widget.addItem("No triple overlaps found.")
 
         return union_objects
+
+def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origin_x, true_origin_y):
+    blobs_by_color = {color: [] for color in blobs}
+
+    for color, blob_dict in blobs.items():
+        for coord_key, blob_list in blob_dict.items():
+            blobs_by_color[color].extend(blob_list)
+    union_objects = {}
+    union_index = 1
+    reds = blobs_by_color.get('red', [])
+    greens = blobs_by_color.get('green', [])
+    blues = blobs_by_color.get('blue', [])
+    for r in reds:
+        for g in greens:
+            if not boxes_intersect(r, g):
+                continue
+            for b in blues:
+                if boxes_intersect(r, b) and boxes_intersect(g, b):
+                    cx, cy = union_center(r, g, b)
+                    length, area = union_box_dimensions(r, g, b)
+                    top_left_x = cx - length // 2
+                    top_left_y = cy - length // 2
+                    bottom_right_x = top_left_x + length
+                    bottom_right_y = top_left_y + length
+
+                    real_cx = (cx * microns_per_pixel_x) + true_origin_x
+                    real_cy = (cy * microns_per_pixel_y) + true_origin_y
+                    real_length_x = length * microns_per_pixel_x
+                    real_length_y = length * microns_per_pixel_y
+                    real_area = real_length_x * real_length_y
+
+                    real_top_left = (
+                        (top_left_x * microns_per_pixel_x) + true_origin_x,
+                        (top_left_y * microns_per_pixel_y) + true_origin_y
+                    )
+                    real_bottom_right = (
+                        (bottom_right_x * microns_per_pixel_x) + true_origin_x,
+                        (bottom_right_y * microns_per_pixel_y) + true_origin_y
+                    )
+
+                    union_obj = {
+                        'center': (cx, cy),
+                        'length': length,
+                        'area': area,
+                        'real_center': (real_cx, real_cy),
+                        'real_size': (real_length_x, real_length_y),
+                        'real_area': real_area,
+                        'real_top_left': real_top_left,
+                        'real_bottom_right': real_bottom_right
+                    }
+
+                    union_objects[union_index] = union_obj
+                    union_index += 1
+
+    return union_objects
