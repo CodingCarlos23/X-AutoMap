@@ -27,7 +27,7 @@ from PyQt5.QtCore import Qt, QRect, QTimer
 import globals
 from globals import update_boxes, union_box_drawer, get_current_blobs
 
-def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25):
+def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="queued_regions.json"):
     """
     For each region in the JSON file:
     - Move stage to real_center_um
@@ -35,7 +35,9 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
     """
     with open(json_file_path, "r") as f:
         boxes = json.load(f)
- 
+
+    queued_data = {}
+
     for label, info in boxes.items():
         cx, cy = info["real_center_um"]         # center in um
         sx, sy = info["real_size_um"]           # size in um
@@ -70,6 +72,40 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
         #     exp_t
         # ))
         print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
+        # Add to export dictionary
+        queued_data[label] = {
+            "center_um": [round(cx, 2), round(cy, 2)],
+            "size_um": [round(sx, 2), round(sy, 2)],
+            "num_pixels": [num_x, num_y]
+        }
+    # Save metadata to a JSON file
+    with open(file_save_path, "w") as f_out:
+        json.dump(queued_data, f_out, indent=4)
+
+def save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir="scans"):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+
+    for idx, info in json_safe_data.items():
+        cx, cy = info["real_center_um"]
+        sx, sy = info["real_size_um"]
+        num_x = int(sx * px_per_um)
+        num_y = int(sy * px_per_um)
+
+        scan_data = {
+            "key_scan": {
+                "cx": cx,
+                "cy": cy,
+                "num_x": num_x,
+                "num_y": num_y,
+                "img_x": sx,
+                "img_y": sy
+            }
+        }
+
+        file_path = output_dir / f"key_scan_{idx}.json"
+        with open(file_path, "w") as f:
+            json.dump(scan_data, f, indent=4)
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
@@ -262,11 +298,11 @@ def first_scan_detect_blobs():
         except Exception as e:
             print(f"❌ Error processing {tiff_name}: {e}")
 
-    # --- Done ---
-    print("\n✅ Precomputed blobs:")
-    for color, data in precomputed_blobs.items():
-        if data:
-            print(f"{color}: {data}")
+    # # --- Done ---
+    # print("\n✅ Precomputed blobs:")
+    # for color, data in precomputed_blobs.items():
+    #     if data:
+    #         print(f"{color}: {data}")
 
     return precomputed_blobs
 
@@ -556,14 +592,15 @@ def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origi
                         'center': (cx, cy),
                         'length': length,
                         'area': area,
-                        'real_center': (real_cx, real_cy),
-                        'real_size': (real_length_x, real_length_y),
-                        'real_area': real_area,
-                        'real_top_left': real_top_left,
-                        'real_bottom_right': real_bottom_right
+                        'real_center_um': (real_cx, real_cy),
+                        'real_size_um': (real_length_x, real_length_y),
+                        'real_area_um\u00b2': real_area,
+                        'real_top_left_um': real_top_left,
+                        'real_bottom_right_um': real_bottom_right
                     }
 
                     union_objects[union_index] = union_obj
                     union_index += 1
 
     return union_objects
+ 

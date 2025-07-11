@@ -96,11 +96,11 @@ while True:
                                 "image_center": union["center"],
                                 "image_length": union["length"],
                                 "image_area_px²": union["area"],
-                                "real_center_um": union["real_center"],
-                                "real_size_um": union["real_size"],
-                                "real_area_um²": union["real_area"],
-                                "real_top_left_um": union["real_top_left"],
-                                "real_bottom_right_um": union["real_bottom_right"]
+                                "real_center_um": union["real_center_um"],
+                                "real_size_um": union["real_size_um"],
+                                "real_area_um²": union["real_area_um\u00b2"],
+                                "real_top_left_um": union["real_top_left_um"],
+                                "real_bottom_right_um": union["real_bottom_right_um"]
                             }
 
                             formatted_unions[box_name] = formatted
@@ -123,6 +123,9 @@ while True:
                         with open(output_path, "w") as f:
                             json.dump(formatted_unions, f, indent=2)
                         print(f"\n✅ Union data saved to: {output_path}")
+                        
+                        save_each_blob_as_individual_scan(formatted_unions, px_per_um=1.25, output_dir="output")
+
                         
                         # Example: send to processing function
                         # process_images(tiff1_dilated, tiff2_dilated, tiff3_dilated)

@@ -99,10 +99,10 @@ def create_manual_scan_tab():
     data_fields = {
         "min_threshold_intensity": None,
         "min_threshold_area": None,
-        "globals.microns_per_pixel_x": None,
-        "globals.microns_per_pixel_y": None,
-        "globals.true_origin_x": None,
-        "globals.true_origin_y": None,
+        "microns_per_pixel_x": None,
+        "microns_per_pixel_y": None,
+        "true_origin_x": None,
+        "true_origin_y": None,
         "number_of_scans": None,
         "debt_names": None,
         "x_motor": None,
@@ -191,6 +191,37 @@ def create_manual_scan_tab():
         waiting_label.show()
         timer.start()
         blobs = first_scan_detect_blobs()
+
+
+        watch_dir = Path(os.getcwd())
+        json_path = watch_dir / "first_scan.json"
+        with open(json_path, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                json_items = [[key, value] for key, value in data.items()]
+            else:
+                json_items = [data]
+
+        blobs = find_union_blobs(blobs,json_items[2][1],json_items[3][1],json_items[4][1],json_items[5][1])
+
+        json_safe_data = make_json_serializable(blobs)
+        print()
+        for idx, blob_data in json_safe_data.items():
+            print(f"Blob #{idx}:")
+            for key, value in blob_data.items():
+                print(f"  {key}: {value}")
+
+            print("-" * 40)  # separator line between blobs
+
+        save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25)
+
+
+
+        # output_path = os.path.join(globals.selected_directory, "selected_blobs_to_queue_server.json")
+        # with open(output_path, "w") as f:
+        #     json.dump(json_safe_data, f, indent=2)
+        # structure_blob_tooltips(output_path)
+        # send_json_boxes_to_queue_with_center_move(output_path) 
 
     send_first_scan_btn.clicked.connect(handle_send_scan)
     timer.timeout.connect(check_for_tiffs)
