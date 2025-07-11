@@ -547,6 +547,10 @@ def send_to_queue_server():
     structure_blob_tooltips(output_path)
     send_json_boxes_to_queue_with_center_move(output_path)
 
+    with open(output_path, "r") as f:
+        loaded_data = json.load(f)
+    save_each_blob_as_individual_scan(loaded_data, px_per_um=1.25, output_dir="gui_scans")
+
     globals.queue_server_list.clear()
     globals.queue_server_list.addItem("✅ Data sent and saved")
 

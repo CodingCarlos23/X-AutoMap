@@ -124,7 +124,7 @@ while True:
                             json.dump(formatted_unions, f, indent=2)
                         print(f"\n✅ Union data saved to: {output_path}")
                         
-                        save_each_blob_as_individual_scan(formatted_unions, px_per_um=1.25, output_dir="output")
+                        save_each_blob_as_individual_scan(formatted_unions, px_per_um=1.25, output_dir="headless_scan")
 
                         
                         # Example: send to processing function
