@@ -88,6 +88,7 @@ while True:
 
                         formatted_unions = {}
 
+                        print("Processsing images now")
 
                         for idx, union in unions.items():
                             box_name = f"Union Box #{idx}"
@@ -125,6 +126,7 @@ while True:
                         print(f"\n✅ Union data saved to: {output_path}")
                         
                         save_each_blob_as_individual_scan(formatted_unions, px_per_um=1.25, output_dir="headless_scan")
+                        headless_send_queue("headless_scan")
 
                         
                         # Example: send to processing function

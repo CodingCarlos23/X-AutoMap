@@ -41,8 +41,6 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
     for label, info in boxes.items():
         cx, cy = info["real_center_um"]         # center in um
         sx, sy = info["real_size_um"]           # size in um
-        num_x = int(sx * px_per_um)
-        num_y = int(sy * px_per_um)
  
         # Define relative scan range around center
         x_start = -sx / 2
@@ -55,22 +53,21 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
  
         # # Create ROI dictionary to move motors first
         # roi = {x_motor: cx, y_motor: cy}
- 
-        # RM.item_add(BPlan(
-        #     "recover_pos_and_scan",
-        #     label,
-        #     roi,
-        #     det_names,
-        #     x_motor,
-        #     x_start,
-        #     x_end,
-        #     num_x,
-        #     y_motor,
-        #     y_start,
-        #     y_end,
-        #     num_y,
-        #     exp_t
-        # ))
+        RM.item_add(BPlan(
+            "recover_pos_and_scan",
+            label,
+            roi,
+            det_names,
+            x_motor,
+            x_start,
+            x_end,
+            sx,
+            y_motor,
+            y_start,
+            y_end,
+            sy,
+            exp_t
+        ))
         print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
         # Add to export dictionary
         queued_data[label] = {
@@ -89,23 +86,75 @@ def save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir
     for idx, info in json_safe_data.items():
         cx, cy = info["real_center_um"]
         sx, sy = info["real_size_um"]
-        num_x = int(sx * px_per_um)
-        num_y = int(sy * px_per_um)
 
         scan_data = {
             "key_scan": {
                 "cx": cx,
                 "cy": cy,
-                "num_x": num_x,
-                "num_y": num_y,
-                "img_x": sx,
-                "img_y": sy
+                "num_x": sx,
+                "num_y": sy
             }
         }
 
         file_path = output_dir / f"key_scan_{idx}.json"
         with open(file_path, "w") as f:
             json.dump(scan_data, f, indent=4)
+
+
+def headless_send_queue(directory_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01):
+    """
+    Reads all JSON files in a directory. Each file should contain a single key 
+    with scan parameters like cx, cy, num_x, num_y
+    
+    For each JSON:
+    - Move stage to (cx, cy)
+    - Perform fly2d scan with the specified image size and resolution
+    """
+    for filename in os.listdir(directory_path):
+        if not filename.endswith(".json"):
+            continue
+
+        json_path = os.path.join(directory_path, filename)
+        with open(json_path, "r") as f:
+            data = json.load(f)
+
+        for label, info in data.items():
+            cx = info["cx"]
+            cy = info["cy"] 
+            sx = info["num_x"]
+            sy = info["num_y"]
+
+            # Calculate absolute scan range (not relative to center)
+            x_start = cx - sx / 2
+            x_end = cx + sx / 2
+            y_start = cy - sy / 2
+            y_end = cy + sy / 2
+
+            # det_names = [d.name for d in eval(dets)]
+
+            # roi = {x_motor: cx, y_motor: cy}
+
+            # RM.item_add(BPlan(
+            #     "recover_pos_and_scan",
+            #     label,
+            #     roi,
+            #     det_names,
+            #     x_motor,
+            #     x_start,
+            #     x_end,
+            #     sx,
+            #     y_motor,
+            #     y_start,
+            #     y_end,
+            #     sy,
+            #     exp_t
+            # ))
+
+        print(f"Queued scan(s) from JSON: {filename}")
+        print(f"  → center ({cx:.2f}, {cy:.2f}) µm")
+        print(f"  → x range: {x_start:.2f} to {x_end:.2f} µm")
+        print(f"  → y range: {y_start:.2f} to {y_end:.2f} µm")
+        print()
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
