@@ -213,7 +213,7 @@ def create_manual_scan_tab():
 
             print("-" * 40)  # separator line between blobs
 
-        save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25)
+        save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir="manual_scans")
 
 
 

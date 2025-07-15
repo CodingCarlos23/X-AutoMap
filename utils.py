@@ -43,37 +43,37 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
         sx, sy = info["real_size_um"]           # size in um
  
         # Define relative scan range around center
-        x_start = -sx / 2
-        x_end = sx / 2
-        y_start = -sy / 2
-        y_end = sy / 2
  
+        x_start = cx - sx / 2
+        x_end = cx + sx / 2
+        y_start = cy - sy / 2
+        y_end = cy + sy / 2
+
         # # Detector names
         # det_names = [d.name for d in eval(dets)]
  
         # # Create ROI dictionary to move motors first
         # roi = {x_motor: cx, y_motor: cy}
-        RM.item_add(BPlan(
-            "recover_pos_and_scan",
-            label,
-            roi,
-            det_names,
-            x_motor,
-            x_start,
-            x_end,
-            sx,
-            y_motor,
-            y_start,
-            y_end,
-            sy,
-            exp_t
-        ))
-        print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
+        # RM.item_add(BPlan(
+        #     "recover_pos_and_scan",
+        #     label,
+        #     roi,
+        #     det_names,
+        #     x_motor,
+        #     x_start,
+        #     x_end,
+        #     sx,
+        #     y_motor,
+        #     y_start,
+        #     y_end,
+        #     sy,
+        #     exp_t
+        # ))
+        # print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
         # Add to export dictionary
         queued_data[label] = {
             "center_um": [round(cx, 2), round(cy, 2)],
             "size_um": [round(sx, 2), round(sy, 2)],
-            "num_pixels": [num_x, num_y]
         }
     # Save metadata to a JSON file
     with open(file_save_path, "w") as f_out:
