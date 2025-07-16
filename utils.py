@@ -88,7 +88,7 @@ def save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir
         sx, sy = info["real_size_um"]
 
         scan_data = {
-            "key_scan": {
+            idx: {  # Use the union box title as the key
                 "cx": cx,
                 "cy": cy,
                 "num_x": sx,
@@ -101,7 +101,7 @@ def save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir
             json.dump(scan_data, f, indent=4)
 
 
-def headless_send_queue(directory_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01):
+def headless_send_queue(directory_path, beamline_params):
     """
     Reads all JSON files in a directory. Each file should contain a single key 
     with scan parameters like cx, cy, num_x, num_y
@@ -110,6 +110,13 @@ def headless_send_queue(directory_path, dets="dets1", x_motor="zpssx", y_motor="
     - Move stage to (cx, cy)
     - Perform fly2d scan with the specified image size and resolution
     """
+    dets = beamline_params.get("det_name", "dets1")
+    x_motor = beamline_params.get("mot1", "zpssx")
+    y_motor = beamline_params.get("mot2", "zpssy")
+    exp_t = beamline_params.get("exp_t", 0.01)
+    mot1_n = beamline_params.get("mot1_n", 100)
+    mot2_n = beamline_params.get("mot2_n", 100)
+
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
@@ -124,31 +131,45 @@ def headless_send_queue(directory_path, dets="dets1", x_motor="zpssx", y_motor="
             sx = info["num_x"]
             sy = info["num_y"]
 
-            # Calculate absolute scan range (not relative to center)
-            x_start = cx - sx / 2
-            x_end = cx + sx / 2
-            y_start = cy - sy / 2
-            y_end = cy + sy / 2
+            # Define relative scan range around center
+            x_start = -sx / 2
+            x_end = sx / 2
+            y_start = -sy / 2
+            y_end = sy / 2
 
+            num_steps_x = sx / mot1_n  # Set x_motor to num_steps_x
+            num_steps_y = sy / mot2_n
+
+            # Detector names
             # det_names = [d.name for d in eval(dets)]
-
-            # roi = {x_motor: cx, y_motor: cy}
-
+            # Create ROI dictionary to move motors first
+            roi = {x_motor: cx, y_motor: cy}
             # RM.item_add(BPlan(
-            #     "recover_pos_and_scan",
-            #     label,
-            #     roi,
-            #     det_names,
-            #     x_motor,
-            #     x_start,
-            #     x_end,
-            #     sx,
-            #     y_motor,
-            #     y_start,
-            #     y_end,
-            #     sy,
-            #     exp_t
+            #     "recover_pos_and_scan", #written
+            #     label, #from folder of jsons
+            #     dets, #from beamline_params
+            #     x_motor, #from beamline_params
+            #     x_start, #calculated here
+            #     x_end, #calculated here
+            #     num_steps_x, #calculated here
+            #     y_motor, #from beamline_params
+            #     y_start, #calculated here
+            #     y_end, #calculate d here
+            #     num_steps_y, #calculated here
+            #     exp_t #from beamline_params
             # ))
+
+            print("\n=== Scan Parameters for JSON: {} ===".format(filename))
+            print("recover_pos_and_scan")
+            print(f"Label: {label}")
+            print(f"Detector name (dets): {dets}")
+            print(f"X motor: {x_motor} (mot1), mot1_n: {num_steps_x}")
+            print(f"Y motor: {y_motor} (mot2), mot2_n: {num_steps_y}")
+            print(f"Exposure time (exp_t): {exp_t}")
+            print("--- Scan Ranges ---")
+            print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
+            print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
+            print("------------------------\n")
 
         print(f"Queued scan(s) from JSON: {filename}")
         print(f"  → center ({cx:.2f}, {cy:.2f}) µm")
