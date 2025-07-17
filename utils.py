@@ -79,7 +79,7 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
     with open(file_save_path, "w") as f_out:
         json.dump(queued_data, f_out, indent=4)
 
-def save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir="scans"):
+def save_each_blob_as_individual_scan(json_safe_data, output_dir="scans"):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
 
@@ -96,13 +96,71 @@ def save_each_blob_as_individual_scan(json_safe_data, px_per_um=1.25, output_dir
             }
         }
 
-        file_path = output_dir / f"key_scan_{idx}.json"
+        file_path = output_dir / f"{idx}.json"
         with open(file_path, "w") as f:
             json.dump(scan_data, f, indent=4)
 
-
-def headless_send_queue(directory_path, beamline_params):
+def headless_send_queue_coarse_scan(output_dir, beamline_params):
     """
+    Performs coarse scan using only parameters from beamline_params.
+    The output directory path is constructed and can be used later.
+    No JSON files are read in this function.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+    filepath = output_dir  # This can be used later as needed
+    print(f"JSON path: {filepath}")
+
+    dets = beamline_params.get("det_name", "dets1")
+    x_motor = beamline_params.get("mot1", "zpssx")
+    y_motor = beamline_params.get("mot2", "zpssy")
+    mot1_n = beamline_params.get("mot1_n", 100)
+    mot2_n = beamline_params.get("mot2_n", 100)
+
+    x_start = beamline_params.get("mot1_s", 0)
+    x_end = beamline_params.get("mot1_e", 0)
+    y_start = beamline_params.get("mot2_s", 0)
+    y_end = beamline_params.get("mot2_e", 0)
+
+    # Calculate center as midpoint
+    cx = (x_start + x_end) / 2
+    cy = (y_start + y_end) / 2
+    
+    roi = {x_motor: cx, y_motor: cy}
+
+    # RM.item_add(BPlan(
+    #     "recover_pos_and_scan",
+    #     "coarse_scan", # or another label
+    #     roi,
+    #     dets,
+    #     x_motor,
+    #     x_start,
+    #     x_end,
+    #     mot1_n,
+    #     y_motor,
+    #     y_start,
+    #     y_end,
+    #     mot2_n,
+    # ))
+    #The function ^ would generate the tiff files to headless_scan
+
+    print("In future save Tiff files to the file path")
+    print(f"Output directory path: {filepath}")
+    print("Coarse Scan to Queue Server")
+    print("\n=== Scan Parameters ===")
+    print("recover_pos_and_scan")
+    print(f"ROI (region of interest): {roi}")
+    print(f"Detector name (dets): {dets}")
+    print(f"X motor: {x_motor} (mot1), mot1_n: {mot1_n}")
+    print(f"Y motor: {y_motor} (mot2), mot2_n: {mot2_n}")
+    print("--- Scan Ranges ---")
+    print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
+    print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
+    print("------------------------\n")
+
+def headless_send_queue_fine_scan(directory_path, beamline_params):
+    """
+    Performs fine scan for each blob in the JSON file
     Reads all JSON files in a directory. Each file should contain a single key 
     with scan parameters like cx, cy, num_x, num_y
     
@@ -113,15 +171,18 @@ def headless_send_queue(directory_path, beamline_params):
     dets = beamline_params.get("det_name", "dets1")
     x_motor = beamline_params.get("mot1", "zpssx")
     y_motor = beamline_params.get("mot2", "zpssy")
-    exp_t = beamline_params.get("exp_t", 0.01)
     mot1_n = beamline_params.get("mot1_n", 100)
     mot2_n = beamline_params.get("mot2_n", 100)
+
+    exp_t = beamline_params.get("exp_t", 0.01)
+    step_size = beamline_params.get("step_size", 1)
 
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
 
         json_path = os.path.join(directory_path, filename)
+        print(f"JSON path: {json_path}")
         with open(json_path, "r") as f:
             data = json.load(f)
 
@@ -139,14 +200,15 @@ def headless_send_queue(directory_path, beamline_params):
 
             num_steps_x = sx / mot1_n  # Set x_motor to num_steps_x
             num_steps_y = sy / mot2_n
+            roi = {x_motor: cx, y_motor: cy}
 
             # Detector names
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
-            roi = {x_motor: cx, y_motor: cy}
             # RM.item_add(BPlan(
             #     "recover_pos_and_scan", #written
             #     label, #from folder of jsons
+            #     roi, #calculated here
             #     dets, #from beamline_params
             #     x_motor, #from beamline_params
             #     x_start, #calculated here
@@ -157,24 +219,25 @@ def headless_send_queue(directory_path, beamline_params):
             #     y_end, #calculate d here
             #     num_steps_y, #calculated here
             #     exp_t #from beamline_params
+            #     step_size #from json
             # ))
 
+            print("Fine Scan to Queue Server")
             print("\n=== Scan Parameters for JSON: {} ===".format(filename))
             print("recover_pos_and_scan")
             print(f"Label: {label}")
+            print(f"ROI (region of interest): {roi}")
             print(f"Detector name (dets): {dets}")
             print(f"X motor: {x_motor} (mot1), mot1_n: {num_steps_x}")
             print(f"Y motor: {y_motor} (mot2), mot2_n: {num_steps_y}")
             print(f"Exposure time (exp_t): {exp_t}")
+            print(f"Step size: {step_size}")
             print("--- Scan Ranges ---")
             print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
             print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
             print("------------------------\n")
 
-        print(f"Queued scan(s) from JSON: {filename}")
-        print(f"  → center ({cx:.2f}, {cy:.2f}) µm")
-        print(f"  → x range: {x_start:.2f} to {x_end:.2f} µm")
-        print(f"  → y range: {y_start:.2f} to {y_end:.2f} µm")
+        print(f"Queued scan(s) from JSON: {filename}") 
         print()
 
 def make_json_serializable(obj):
