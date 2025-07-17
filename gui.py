@@ -312,30 +312,41 @@ class ZoomableGraphicsView(QGraphicsView):
                     f"Mean intensity: {blob['mean_intensity']:.3f}<br>"
                     f"Mean dilation intensity: {blob['mean_dilation']:.1f}"
                 )
-                self.hover_label.setText(html)
-                self.hover_label.adjustSize()
-                self.hover_label.move(event.x() + 15, event.y() - 30)
-                self.hover_label.setStyleSheet(
+                globals.hover_label.setText(html)
+                globals.hover_label.adjustSize()
+                globals.hover_label.move(event.x() + 15, event.y() - 30)
+                globals.hover_label.setStyleSheet(
                     f"background-color: {blob['color']}; color: white; border: 1px solid black; padding: 4px;"
                 )
-                self.hover_label.show()
+                globals.hover_label.show()
                 return 
                 
         if globals.checkboxes['union'].isChecked():  # actual union box visibility check
             for ub in globals.global_union_boxes:
-                if ub['rect'].contains(pos.toPoint()):
-                    self.hover_label.setText(ub['text'])
-                    self.hover_label.adjustSize()
-                    self.hover_label.move(event.x() + 15, event.y() - 30)
-                    self.hover_label.setStyleSheet(
+                rect = ub['rect']
+                # Try both methods for robustness
+                if hasattr(rect, 'rect') and rect.rect().contains(pos.toPoint()):
+                    globals.hover_label.setText(ub['text'])
+                    globals.hover_label.adjustSize()
+                    globals.hover_label.move(event.x() + 15, event.y() - 30)
+                    globals.hover_label.setStyleSheet(
                         "background-color: white; color: black; border: 1px solid black; padding: 4px;"
                     )
-                    self.globals.hover_label.show()
+                    globals.hover_label.show()
+                    return
+                elif hasattr(rect, 'contains') and rect.contains(pos.toPoint()):
+                    globals.hover_label.setText(ub['text'])
+                    globals.hover_label.adjustSize()
+                    globals.hover_label.move(event.x() + 15, event.y() - 30)
+                    globals.hover_label.setStyleSheet(
+                        "background-color: white; color: black; border: 1px solid black; padding: 4px;"
+                    )
+                    globals.hover_label.show()
                     return
 
 
         
-        self.hover_label.hide()
+        globals.hover_label.hide()
 
     def update_blobs(self, blobs, visible_colors):
         self.blobs = blobs
@@ -549,7 +560,7 @@ def send_to_queue_server():
 
     with open(output_path, "r") as f:
         loaded_data = json.load(f)
-    save_each_blob_as_individual_scan(loaded_data, px_per_um=1.25, output_dir="gui_scans")
+    save_each_blob_as_individual_scan(loaded_data, output_dir="gui_scans")
 
     globals.queue_server_list.clear()
     globals.queue_server_list.addItem("✅ Data sent and saved")

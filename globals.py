@@ -119,7 +119,8 @@ def update_boxes():
 
 
 def union_box_drawer(union_dict, base_img=None, clear_only=False):
-    global_union_boxes = []  # Clear old ones
+    import globals
+    globals.global_union_boxes = []  # Clear old ones
 
     valid_img = base_img or graphics_view.current_qimage
 
@@ -163,7 +164,7 @@ def union_box_drawer(union_dict, base_img=None, clear_only=False):
         )
         
         # Store for hover lookup
-        global_union_boxes.append({
+        globals.global_union_boxes.append({
             'rect': QRect(x, y, w, h),
             'text': hover_text
         })

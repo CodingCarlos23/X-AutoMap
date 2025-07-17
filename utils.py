@@ -680,6 +680,8 @@ def union_function():
             globals.union_list_widget.clear()
             globals.union_list_widget.addItem("No triple overlaps found.")
 
+        print(union_objects)
+        print("Hi")
         return union_objects
 
 def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origin_x, true_origin_y):
