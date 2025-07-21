@@ -1,0 +1,106 @@
+{
+  "Union Box #1": {
+    "text": "Union Box #1",
+    "image_center": [
+      479,
+      753
+    ],
+    "image_length": 24,
+    "image_area_px\u00b2": 576,
+    "real_center_um": [
+      536.9000000000001,
+      923.6
+    ],
+    "real_size_um": [
+      26.400000000000002,
+      28.799999999999997
+    ],
+    "real_area_um\u00b2": 760.3199999999999,
+    "real_top_left_um": [
+      523.7,
+      909.1999999999999
+    ],
+    "real_bottom_right_um": [
+      550.1,
+      938.0
+    ]
+  },
+  "Union Box #2": {
+    "text": "Union Box #2",
+    "image_center": [
+      500,
+      611
+    ],
+    "image_length": 32,
+    "image_area_px\u00b2": 1024,
+    "real_center_um": [
+      560.0,
+      753.1999999999999
+    ],
+    "real_size_um": [
+      35.2,
+      38.4
+    ],
+    "real_area_um\u00b2": 1351.68,
+    "real_top_left_um": [
+      542.4000000000001,
+      734.0
+    ],
+    "real_bottom_right_um": [
+      577.6,
+      772.4
+    ]
+  },
+  "Union Box #3": {
+    "text": "Union Box #3",
+    "image_center": [
+      481,
+      567
+    ],
+    "image_length": 32,
+    "image_area_px\u00b2": 1024,
+    "real_center_um": [
+      539.1,
+      700.4
+    ],
+    "real_size_um": [
+      35.2,
+      38.4
+    ],
+    "real_area_um\u00b2": 1351.68,
+    "real_top_left_um": [
+      521.5,
+      681.1999999999999
+    ],
+    "real_bottom_right_um": [
+      556.7,
+      719.6
+    ]
+  },
+  "Union Box #4": {
+    "text": "Union Box #4",
+    "image_center": [
+      488,
+      562
+    ],
+    "image_length": 37,
+    "image_area_px\u00b2": 1369,
+    "real_center_um": [
+      546.8000000000001,
+      694.4
+    ],
+    "real_size_um": [
+      40.7,
+      44.4
+    ],
+    "real_area_um\u00b2": 1807.0800000000002,
+    "real_top_left_um": [
+      527.0,
+      672.8
+    ],
+    "real_bottom_right_um": [
+      567.7,
+      717.1999999999999
+    ]
+  }
+}

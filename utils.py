@@ -109,7 +109,6 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
     filepath = output_dir  # This can be used later as needed
-    print(f"JSON path: {filepath}")
 
     dets = beamline_params.get("det_name", "dets1")
     x_motor = beamline_params.get("mot1", "zpssx")
@@ -144,8 +143,6 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     # ))
     #The function ^ would generate the tiff files to headless_scan
 
-    print("In future save Tiff files to the file path")
-    print(f"Output directory path: {filepath}")
     print("Coarse Scan to Queue Server")
     print("\n=== Scan Parameters ===")
     print("recover_pos_and_scan")
@@ -156,7 +153,7 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     print("--- Scan Ranges ---")
     print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
     print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
-    print("------------------------\n")
+    print("------------------------")
 
 def headless_send_queue_fine_scan(directory_path, beamline_params):
     """
@@ -180,9 +177,10 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
+        if filename == "unions_output.json":
+            continue
 
         json_path = os.path.join(directory_path, filename)
-        print(f"JSON path: {json_path}")
         with open(json_path, "r") as f:
             data = json.load(f)
 

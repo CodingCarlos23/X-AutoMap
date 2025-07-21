@@ -8,7 +8,7 @@ import numpy as np
 import traceback as trackback
 # === Setup ===
 notebook_dir = pathlib.Path().resolve()
-watch_dir = notebook_dir / "input"
+watch_dir = notebook_dir / "data" / "input"
 watch_dir.mkdir(exist_ok=True)
 
 def find_unique_tiff_files(folder):
@@ -21,7 +21,6 @@ precomputed_blobs = {
     "blue": {}
 }
 
-print("Start")
 print("Looking for analysis_params.json and beamline_params.json")
 
 analysis_params_path = watch_dir / "analysis_params.json"
@@ -88,12 +87,11 @@ def wait_for_element_tiffs(element_list, watch_dir):
     return tiff_paths
 
 print()
-print("Sending coarse scan to queue server")
 headless_send_queue_coarse_scan("headless_scan", beamline_params)
 
 # Wait for all required TIFF files before proceeding
 required_elements = analysis_params["element_list"]
-tiff_paths = wait_for_element_tiffs(required_elements, Path("headless_scan")) 
+tiff_paths = wait_for_element_tiffs(required_elements, Path("data/headless_scan")) 
 
 # Define up to 8 colors for blob detection
 COLOR_ORDER = [
@@ -171,13 +169,12 @@ if len(processed_elements) >= 2:
         print("-" * 50)
 
     # Save to file
-    output_path = notebook_dir / "unions_output.json"
+    output_path = "data/headless_scan/unions_output.json"
     with open(output_path, "w") as f:
         json.dump(formatted_unions, f, indent=2)
     print(f"\n✅ Union data saved to: {output_path}")
-    
-    print("Data send to queue server")
-    save_each_blob_as_individual_scan(formatted_unions, output_dir="headless_scan")
-    headless_send_queue_fine_scan("headless_scan", beamline_params)
+    print()
+    save_each_blob_as_individual_scan(formatted_unions, output_dir="data/headless_scan")
+    headless_send_queue_fine_scan("data/headless_scan", beamline_params)
 else:
     print("Not enough TIFFs to perform union operation (need at least 2 Elements)")
