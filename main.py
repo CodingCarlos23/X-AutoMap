@@ -57,7 +57,7 @@ globals.main_layout = QVBoxLayout()
 # Directory selector
 dir_button = QPushButton("Choose Directory")
 dir_button.clicked.connect(on_dir_selected)
-globals.main_layout.addWidget(dir_button)
+# globals.main_layout.addWidget(dir_button)
 
 # List of files in the selected directory
 globals.file_list_widget = QListWidget()
@@ -71,6 +71,7 @@ file_confirm_layout.addWidget(globals.file_list_widget)
 right_panel = QVBoxLayout()
 confirm_button = QPushButton("Confirm Selection")
 confirm_button.clicked.connect(on_confirm_clicked)
+right_panel.addWidget(dir_button)
 right_panel.addWidget(confirm_button)
 right_panel.addStretch()
 

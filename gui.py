@@ -741,9 +741,21 @@ def init_gui():
                 )
                 
     # Save the augmented copy to disk
-    output_path = os.path.join(globals.selected_directory, "precomputed_blobs_with_real_info.pkl")
+    # os.makedirs("data/gui_scans", exist_ok=True)
+    # output_path = os.path.join(globals.selected_directory, "data/gui_scans/precomputed_blobs_with_real_info.pkl")
+    # with open(output_path, "wb") as f:
+    #     pickle.dump(blobs_to_save, f) 
+
+        # Construct full output path
+    output_path = os.path.join(globals.selected_directory, "data/gui_scans/precomputed_blobs_with_real_info.pkl")
+
+    # Ensure the full directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    # Now safely write the file
     with open(output_path, "wb") as f:
-        pickle.dump(blobs_to_save, f) 
+        pickle.dump(blobs_to_save, f)
+
         
     progress_bar.hide()
     QApplication.processEvents()
@@ -780,7 +792,7 @@ def init_gui():
     globals.checkboxes = {}
     selected_colors = set(globals.element_colors)
  
-    legend_layout = QVBoxLayout()
+    legend_layout = QHBoxLayout()
     legend_label = QLabel("Legend")
     legend_label.setStyleSheet("font-weight: bold; font-size: 12pt;")
     legend_layout.addWidget(legend_label)
@@ -927,13 +939,19 @@ def init_gui():
     controls.addLayout(legend_layout)
     controls.addLayout(slider_layout)
     controls.addLayout(area_slider_layout)
-    controls.addWidget(x_label)
-    controls.addWidget(y_label)
-    controls.addWidget(x_micron_label)
-    controls.addWidget(y_micron_label)
+
+    live_location_layout = QHBoxLayout()
+    live_location_layout.addWidget(x_label)
+    live_location_layout.addWidget(y_label)
+    live_location_layout.addWidget(x_micron_label)
+    live_location_layout.addWidget(y_micron_label)
+    controls.addLayout(live_location_layout)
 
     layout = QHBoxLayout()
+    
     layout.addWidget(globals.graphics_view)
+    # globals.main_layout.addLayout(globals.graphics_view)
+
     side_panel = QWidget()
     side_panel.setLayout(controls)
     globals.controls_widget = side_panel

@@ -1,0 +1,6 @@
+{ 
+    "microns_per_pixel_x": 0.250,
+    "microns_per_pixel_y": 0.250,
+    "true_origin_x": 10,
+    "true_origin_y": 20
+}
