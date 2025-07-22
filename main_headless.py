@@ -84,7 +84,7 @@ def wait_for_element_tiffs(element_list, watch_dir):
     return tiff_paths
 
 print()
-headless_send_queue_coarse_scan("headless_scan", beamline_params)
+headless_send_queue_coarse_scan("data/headless_scan", beamline_params)
 
 # Wait for all required TIFF files before proceeding
 required_elements = analysis_params["element_list"]
