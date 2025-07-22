@@ -6,7 +6,7 @@ import time
 import tifffile as tiff
 import numpy as np
 import traceback as trackback
-# === Setup ===
+
 notebook_dir = pathlib.Path().resolve()
 watch_dir = notebook_dir / "data" / "input"
 watch_dir.mkdir(exist_ok=True)
@@ -50,9 +50,6 @@ try:
 except Exception as e:
     print(f"Error reading JSON files: {e}")
     exit(1)
-
-# analysis_params = [[key, value] for key, value in analysis_params.items()]
-# beamline_params = [[key, value] for key, value in beamline_params.items()]
 
 # Only process TIFF files, since JSON is already loaded above
 precomputed = {}

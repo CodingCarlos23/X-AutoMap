@@ -9,6 +9,8 @@
 "mot2_s": -12.5,  
 "mot2_e": 12.5, 
 "mot2_n": 100, 
-"exp_t": 0.01,
-"step_size": 1
+"exp_t_coarse": 0.01,
+"exp_t_fine": 0.02,
+"step_size_fine": 0.100,
+"step_size_coarse": 0.250
 }

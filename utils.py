@@ -14,6 +14,10 @@ import cv2
 import numpy as np
 import tifffile as tiff
 
+# from bluesky_queueserver_api import BPlan
+# from bluesky_queueserver_api.zmq import REManagerAPI
+# RM = REManagerAPI()
+
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
@@ -54,6 +58,7 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
  
         # # Create ROI dictionary to move motors first
         # roi = {x_motor: cx, y_motor: cy}
+
         # RM.item_add(BPlan(
         #     "recover_pos_and_scan",
         #     label,
@@ -69,6 +74,7 @@ def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_mo
         #     sy,
         #     exp_t
         # ))
+
         # print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
         # Add to export dictionary
         queued_data[label] = {
@@ -110,16 +116,19 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     output_dir.mkdir(exist_ok=True)
     filepath = output_dir  # This can be used later as needed
 
-    dets = beamline_params.get("det_name", "dets1")
+    dets = beamline_params.get("det_name", "dets_fs")
     x_motor = beamline_params.get("mot1", "zpssx")
     y_motor = beamline_params.get("mot2", "zpssy")
-    mot1_n = beamline_params.get("mot1_n", 100)
-    mot2_n = beamline_params.get("mot2_n", 100)
 
     x_start = beamline_params.get("mot1_s", 0)
     x_end = beamline_params.get("mot1_e", 0)
     y_start = beamline_params.get("mot2_s", 0)
     y_end = beamline_params.get("mot2_e", 0)
+
+    step_size = beamline_params.get("step_size_coarse", 250)
+    mot1_n = int(abs(x_end-x_start)/step_size)
+    mot2_n = int(abs(y_end-y_start)/step_size)
+    exp_time = beamline_params.get("exp_t_coarse", 0.01)
 
     # Calculate center as midpoint
     cx = (x_start + x_end) / 2
@@ -140,7 +149,9 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     #     y_start,
     #     y_end,
     #     mot2_n,
+    #     exp_time
     # ))
+
     #The function ^ would generate the tiff files to headless_scan
 
     print("Coarse Scan to Queue Server")
@@ -150,6 +161,8 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     print(f"Detector name (dets): {dets}")
     print(f"X motor: {x_motor} (mot1), mot1_n: {mot1_n}")
     print(f"Y motor: {y_motor} (mot2), mot2_n: {mot2_n}")
+    print(f"Exposure time (exp_t): {exp_time}")
+    print(f"Step size: {step_size}")
     print("--- Scan Ranges ---")
     print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
     print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
@@ -172,7 +185,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
     mot2_n = beamline_params.get("mot2_n", 100)
 
     exp_t = beamline_params.get("exp_t", 0.01)
-    step_size = beamline_params.get("step_size", 1)
+    step_size = beamline_params.get("step_size_fine", 100)
 
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
@@ -196,13 +209,14 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
             y_start = -sy / 2
             y_end = sy / 2
 
-            num_steps_x = sx / mot1_n  # Set x_motor to num_steps_x
-            num_steps_y = sy / mot2_n
+            num_steps_x = int(sx / (step_size)) # Set x_motor to num_steps_x
+            num_steps_y = int(sy / (step_size))
             roi = {x_motor: cx, y_motor: cy}
 
             # Detector names
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
+
             # RM.item_add(BPlan(
             #     "recover_pos_and_scan", #written
             #     label, #from folder of jsons
@@ -216,7 +230,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
             #     y_start, #calculated here
             #     y_end, #calculate d here
             #     num_steps_y, #calculated here
-            #     exp_t #from beamline_params
+            #     exp_t, #from beamline_params
             #     step_size #from json
             # ))
 
