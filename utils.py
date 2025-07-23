@@ -31,12 +31,15 @@ from PyQt5.QtCore import Qt, QRect, QTimer
 import globals
 from globals import update_boxes, union_box_drawer, get_current_blobs
 
-def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="queued_regions.json"):
+def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="data/gui_scans/queued_regions.json"):
     """
     For each region in the JSON file:
     - Move stage to real_center_um
     - Perform fly2d scan centered on that position
     """
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(file_save_path), exist_ok=True)
+
     with open(json_file_path, "r") as f:
         boxes = json.load(f)
 
@@ -681,7 +684,7 @@ def union_function():
         
                 globals.union_list_widget.addItem(item)
 
-            output_path = os.path.join(globals.selected_directory, "union_blobs.pkl")
+            output_path = os.path.join(globals.selected_directory, "data/gui_scans/union_blobs.pkl")
             with open(output_path, "wb") as f:
                 pickle.dump(globals.graphics_view.union_dict, f)
     

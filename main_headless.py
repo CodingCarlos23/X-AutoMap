@@ -25,12 +25,15 @@ print("Looking for analysis_params.json and beamline_params.json")
 
 analysis_params_path = watch_dir / "analysis_params.json"
 beamline_params_path = watch_dir / "beamline_params.json"
+scan_params_path = watch_dir / "scan_200_params.json"
 
 missing_files = []
 if not analysis_params_path.exists():
     missing_files.append("analysis_params.json")
 if not beamline_params_path.exists():
     missing_files.append("beamline_params.json")
+if not scan_params_path.exists():
+    missing_files.append("scan_200_params.json")
 
 if missing_files:
     for fname in missing_files:
@@ -43,10 +46,14 @@ try:
         analysis_params = json.load(f)
     with open(beamline_params_path, "r") as f:
         beamline_params = json.load(f)
+    with open(scan_params_path, "r") as f:
+        scan_params = json.load(f)
     print("Loaded analysis_params.json:")
     print(analysis_params)
     print("Loaded beamline_params.json:")
     print(beamline_params)
+    print("Loaded scan_200_params.json:")
+    print(scan_params)
 except Exception as e:
     print(f"Error reading JSON files: {e}")
     exit(1)
@@ -126,10 +133,10 @@ for idx, element in enumerate(processed_elements):
 if len(processed_elements) >= 2:
     unions = find_union_blobs(
         precomputed_blobs,
-        analysis_params["microns_per_pixel_x"],
-        analysis_params["microns_per_pixel_y"],
-        analysis_params["true_origin_x"],
-        analysis_params["true_origin_y"]
+        scan_params["microns_per_pixel_x"],
+        scan_params["microns_per_pixel_y"],
+        scan_params["true_origin_x"],
+        scan_params["true_origin_y"]
     )
 
     formatted_unions = {}

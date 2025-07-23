@@ -497,7 +497,7 @@ def add_box():
         
         globals.union_list_widget.addItem(item)
 
-        output_path = os.path.join(globals.selected_directory, "union_blobs.pkl")
+        output_path = os.path.join(globals.selected_directory, "data/gui_scans/union_blobs.pkl")
         with open(output_path, "wb") as f:
             pickle.dump(globals.graphics_view.union_dict, f)
             
@@ -551,7 +551,7 @@ def send_to_queue_server():
 
     json_safe_data = make_json_serializable(data)
 
-    output_path = os.path.join(globals.selected_directory, "selected_blobs_to_queue_server.json")
+    output_path = os.path.join(globals.selected_directory, "data/gui_scans/selected_blobs_to_queue_server.json")
     with open(output_path, "w") as f:
         json.dump(json_safe_data, f, indent=2)
 
@@ -560,7 +560,7 @@ def send_to_queue_server():
 
     with open(output_path, "r") as f:
         loaded_data = json.load(f)
-    save_each_blob_as_individual_scan(loaded_data, output_dir="gui_scans")
+    save_each_blob_as_individual_scan(loaded_data, output_dir="data/gui_scans")
 
     globals.queue_server_list.clear()
     globals.queue_server_list.addItem("✅ Data sent and saved")
