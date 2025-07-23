@@ -52,7 +52,7 @@ globals.window.setWindowTitle("Multi-Element Image Analyzer")
 globals.window.resize(600, 500)
 
 
-globals.main_layout = QVBoxLayout()
+globals.main_layout = QHBoxLayout()
 
 # Directory selector
 dir_button = QPushButton("Choose Directory")
@@ -64,16 +64,16 @@ globals.file_list_widget = QListWidget()
 globals.file_list_widget.setSelectionMode(QListWidget.NoSelection)
 globals.file_list_widget.itemChanged.connect(update_selection)
 # Horizontal layout: file list on the left, confirm button on the right
-file_confirm_layout = QHBoxLayout()
-file_confirm_layout.addWidget(globals.file_list_widget)
+globals.file_confirm_layout = QHBoxLayout()
+globals.file_confirm_layout.addWidget(globals.file_list_widget)
 
 # Right side (confirm button)
-right_panel = QVBoxLayout()
+file_buttons_panel = QVBoxLayout()
 confirm_button = QPushButton("Confirm Selection")
 confirm_button.clicked.connect(on_confirm_clicked)
-right_panel.addWidget(dir_button)
-right_panel.addWidget(confirm_button)
-right_panel.addStretch()
+file_buttons_panel.addWidget(dir_button)
+file_buttons_panel.addWidget(confirm_button)
+file_buttons_panel.addStretch()
 
 globals.float_input_micron_x  = QDoubleSpinBox()
 globals.float_input_micron_x.setPrefix("Enter X(µm) per pixel:")
@@ -81,7 +81,7 @@ globals.float_input_micron_x.setRange(0.0, 1000.0)         # Adjust range as nee
 globals.float_input_micron_x.setSingleStep(0.1)            # Step size
 globals.float_input_micron_x.setDecimals(3)                # Number of decimal places
 globals.float_input_micron_x.setValue(1.0)                 # Default value
-right_panel.addWidget(globals.float_input_micron_x)
+file_buttons_panel.addWidget(globals.float_input_micron_x)
 
 globals.float_input_micron_y  = QDoubleSpinBox()
 globals.float_input_micron_y.setPrefix("Enter Y(µm) per pixel:")
@@ -89,7 +89,7 @@ globals.float_input_micron_y.setRange(0.0, 1000.0)         # Adjust range as nee
 globals.float_input_micron_y.setSingleStep(0.1)            # Step size
 globals.float_input_micron_y.setDecimals(3)                # Number of decimal places
 globals.float_input_micron_y.setValue(1.0)                 # Default value
-right_panel.addWidget(globals.float_input_micron_y)
+file_buttons_panel.addWidget(globals.float_input_micron_y)
 
 globals.origin_x_input = QDoubleSpinBox()
 globals.origin_x_input.setPrefix("Origin X(µm): ")
@@ -103,12 +103,15 @@ globals.origin_y_input.setRange(-1e6, 1e6)
 globals.origin_y_input.setDecimals(2)
 globals.origin_x_input.setValue(0.0)                 # Default value
 
-right_panel.addWidget(globals.origin_x_input)
-right_panel.addWidget(globals.origin_y_input)
+file_buttons_panel.addWidget(globals.origin_x_input)
+file_buttons_panel.addWidget(globals.origin_y_input)
 
-file_confirm_layout.addLayout(right_panel)
+globals.file_confirm_layout.addLayout(file_buttons_panel)
 
-globals.main_layout.addLayout(file_confirm_layout)
+globals.left_panel = QVBoxLayout()
+globals.left_panel.addLayout(globals.file_confirm_layout)
+
+globals.main_layout.addLayout(globals.left_panel)
 
 # Track full file paths
 globals.file_paths = []
@@ -123,7 +126,12 @@ globals.current_iteration = 0
 globals.custom_box_number = 1
 
 layout_wrapper = QWidget()
-layout_wrapper.setLayout(globals.main_layout)
+
+globals.outer_layout = QVBoxLayout()
+
+globals.outer_layout.addLayout(globals.main_layout) 
+
+layout_wrapper.setLayout(globals.outer_layout)
 tabs = QTabWidget()
 tabs.addTab(layout_wrapper, "Home")
 

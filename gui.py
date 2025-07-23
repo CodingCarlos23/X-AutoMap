@@ -94,6 +94,11 @@ def update_progress(val):
     progress_bar.setValue(val)
     QApplication.processEvents()
 
+def nest_layouts(parent_layout, child_layout):
+    """
+    Add `child_layout` into `parent_layout`.
+    """
+    parent_layout.addLayout(child_layout)
 
 def create_manual_scan_tab():
     data_fields = {
@@ -614,10 +619,10 @@ def init_gui():
     globals.precomputed_blobs = {}
     
     # Remove old progress bars if they exist
-    for i in reversed(range(globals.main_layout.count())):
-        widget = globals.main_layout.itemAt(i).widget()
+    for i in reversed(range(globals.outer_layout.count())):
+        widget = globals.outer_layout.itemAt(i).widget()
         if isinstance(widget, QProgressBar):
-            globals.main_layout.removeWidget(widget)
+            globals.outer_layout.removeWidget(widget)
             widget.setParent(None)
             widget.deleteLater()
 
@@ -664,7 +669,7 @@ def init_gui():
     progress_bar.setValue(0)
     progress_bar.setTextVisible(True)
     progress_bar.setFormat("Computing blobs... %p%")
-    globals.main_layout.addWidget(progress_bar)
+    globals.outer_layout.addWidget(progress_bar)
     QApplication.processEvents() 
     progress_bar.show()
     QApplication.processEvents()
@@ -862,10 +867,10 @@ def init_gui():
     reset_btn = QPushButton("Reset View")
     reset_btn.clicked.connect(lambda: globals.graphics_view.resetTransform())
         
-    add_btn = QPushButton("Add custom box")
+    add_btn = QPushButton("Add Box")
     add_btn.clicked.connect(add_box)
     
-    union_btn = QPushButton("Get current unions")
+    union_btn = QPushButton("Get unions")
     union_btn.clicked.connect(union_function)
 
     globals.union_list_widget = QListWidget()
@@ -900,13 +905,13 @@ def init_gui():
     globals.queue_server_list.setMinimumHeight(200)
     globals.queue_server_list.setLineWidth(1)
 
-    send_to_list_btn = QPushButton("Add to Queue server List")
+    send_to_list_btn = QPushButton("Add to list")
     send_to_list_btn.clicked.connect(send_to_list)
 
-    send_elements_to_list_btn = QPushButton("Add all individual element scans to list")
+    send_elements_to_list_btn = QPushButton("Get all elements")
     send_elements_to_list_btn.clicked.connect(get_elements_list)
 
-    send_to_queue_server_btn = QPushButton("Send to Queue server List")    
+    send_to_queue_server_btn = QPushButton("Send to Queue Server")    
     send_to_queue_server_btn.clicked.connect(send_to_queue_server)
 
     clear_queue_server_btn = QPushButton("Clear")    
@@ -949,8 +954,8 @@ def init_gui():
 
     layout = QHBoxLayout()
     
-    layout.addWidget(globals.graphics_view)
-    # globals.main_layout.addLayout(globals.graphics_view)
+    # layout.addWidget(globals.graphics_view)
+    globals.left_panel.addWidget(globals.graphics_view)
 
     side_panel = QWidget()
     side_panel.setLayout(controls)

@@ -38,6 +38,8 @@ true_origin_x = None
 true_origin_y = None
 main_layout = None
 
+file_confirm_layout = None
+
 graphics_view = None
 
 controls_widget = None
