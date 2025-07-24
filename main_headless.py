@@ -91,10 +91,13 @@ def wait_for_element_tiffs(element_list, watch_dir):
     return tiff_paths
 
 print()
-headless_send_queue_coarse_scan("data/headless_scan", beamline_params)
+#Later one remove the first 2 params and keep the 3rd for headless_send_queue_coarse_scan
+initial_scan_path = watch_dir / "initial_scan.json"
+headless_send_queue_coarse_scan("data/headless_scan", beamline_params, initial_scan_path)
 
 # Wait for all required TIFF files before proceeding
 required_elements = analysis_params["element_list"]
+#The path for Tiff we can change to the proper path later
 tiff_paths = wait_for_element_tiffs(required_elements, Path("data/headless_scan")) 
 
 # Define up to 8 colors for blob detection
@@ -178,7 +181,9 @@ if len(processed_elements) >= 2:
         json.dump(formatted_unions, f, indent=2)
     print(f"\n✅ Union data saved to: {output_path}")
     print()
+    #change the output_dir to the proper path later the out_dir from export and save 
     save_each_blob_as_individual_scan(formatted_unions, output_dir="data/headless_scan")
-    headless_send_queue_fine_scan("data/headless_scan", beamline_params)
+    #change the output_dir to the proper path later the out_dir from export and save 
+    headless_send_queue_fine_scan("data/headless_scan", beamline_params, output_dir="data/headless_scan")
 else:
     print("Not enough TIFFs to perform union operation (need at least 2 Elements)")
