@@ -9,6 +9,8 @@ import threading
 import multiprocessing
 from collections import Counter
 from pathlib import Path
+import traceback as trackback
+import inspect
 
 import cv2
 import numpy as np
@@ -109,7 +111,7 @@ def save_each_blob_as_individual_scan(json_safe_data, output_dir="scans"):
         with open(file_path, "w") as f:
             json.dump(scan_data, f, indent=4)
 
-def headless_send_queue_coarse_scan(output_dir, beamline_params):
+def headless_send_queue_coarse_scan(output_dir, beamline_params, coarse_scan_path):
     """
     Performs coarse scan using only parameters from beamline_params.
     The output directory path is constructed and can be used later.
@@ -154,7 +156,7 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params):
     #     mot2_n,
     #     exp_time
     # ))
-    load_and_queue(output_dir / "initial_scan.json")
+    load_and_queue(coarse_scan_path)
     #The function ^ would generate the tiff files to headless_scan
 
     print("Coarse Scan to Queue Server")
@@ -222,6 +224,23 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
 
             # RM.item_add(BPlan(
             #     "recover_pos_and_scan", #written
+            #     label, #from folder of jsons
+            #     roi, #calculated here
+            #     dets, #from beamline_params
+            #     x_motor, #from beamline_params
+            #     x_start, #calculated here
+            #     x_end, #calculated here
+            #     num_steps_x, #calculated here
+            #     y_motor, #from beamline_params
+            #     y_start, #calculated here
+            #     y_end, #calculate d here
+            #     num_steps_y, #calculated here
+            #     exp_t, #from beamline_params
+            #     step_size #from json
+            # ))
+
+            # RM.item_add(BPlan(
+            #     "recover_pos_from,SID_and_scan", #written
             #     label, #from folder of jsons
             #     roi, #calculated here
             #     dets, #from beamline_params
@@ -754,6 +773,35 @@ def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origi
 
     return union_objects
  
+def wait_for_element_tiffs(element_list, watch_dir):
+    tiff_paths = {}
+    print(watch_dir)
+    print("\nWaiting for TIFF files for all elements:", element_list)
+    missing_reported = set()
+    while True:
+        all_found = True
+        tiff_paths.clear()
+        missing_now = set()
+        for element in element_list:
+            pattern = f"scan_*_{element}.tiff"
+            watch_dir = Path(watch_dir)
+            matches = list(watch_dir.glob(pattern))
+            if matches:
+                tiff_paths[element] = matches[0]
+            else:
+                all_found = False
+                missing_now.add(element)
+        # Only print for elements that are newly missing
+        for element in missing_now - missing_reported:
+            print(f"Waiting for TIFF file for element: {element}")
+        missing_reported = missing_now
+        if all_found:
+            break
+        time.sleep(2)
+    print("\n✅ Found TIFF files for all elements:")
+    for element in element_list:
+        print(f"{element}: {tiff_paths[element].name}")
+    return tiff_paths
 
 def _get_flyscan_dimensions(hdr):
     start_doc = hdr.start
@@ -778,25 +826,25 @@ def _get_flyscan_dimensions(hdr):
 
 def export_xrf_roi_data(scan_id, norm = 'sclr1_ch4', elem_list = [], wd = '.'):
 
-    hdr = db[int(scan_id)]
-    scan_id = hdr.start["scan_id"]
+    # hdr = db[int(scan_id)]
+    # scan_id = hdr.start["scan_id"]
    
     channels = [1, 2, 3]
     #print(f"{elem_list = }")
     print(f"[DATA] fetching XRF ROIs")
-    scan_dim = _get_flyscan_dimensions(hdr)
+    # scan_dim = _get_flyscan_dimensions(hdr)
     print(f"[DATA] fetching scalar values")
 
-    scalar = np.array(list(hdr.data(norm))).squeeze()
+    # scalar = np.array(list(hdr.data(norm))).squeeze()
     print(f"[DATA] fetching scalar {norm} values done")
 
-    for elem in sorted(elem_list):
-        roi_keys = [f'Det{chan}_{elem}' for chan in channels]
-        spectrum = np.sum([np.array(list(hdr.data(roi)), dtype=np.float32).squeeze() for roi in roi_keys], axis=0)
-        if norm !=None:
-            spectrum = spectrum/scalar
-        xrf_img = spectrum.reshape(scan_dim)
-        tf.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
+    # for elem in sorted(elem_list):
+        # roi_keys = [f'Det{chan}_{elem}' for chan in channels]
+        # spectrum = np.sum([np.array(list(hdr.data(roi)), dtype=np.float32).squeeze() for roi in roi_keys], axis=0)
+        # if norm !=None:
+            # spectrum = spectrum/scalar
+        # xrf_img = spectrum.reshape(scan_dim)
+        # tiff.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
 
 
 def export_scan_params(sid=-1, zp_flag=True, save_to=None):
@@ -811,65 +859,65 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None):
       - step_size (computed from scan_input for 2D_FLY_PANDA)
     """
     # 1) Pull the header
-    hdr = db[int(sid)]
-    start_doc = dict(hdr.start)  # cast to plain dict
+    # hdr = db[int(sid)]
+    # start_doc = dict(hdr.start)  # cast to plain dict
 
     # 2) Grab the baseline table and build the ROI dict
-    tbl = db.get_table(hdr, stream_name='baseline')
-    row = tbl.iloc[0]
-    if zp_flag:
-        roi = {
-            "zpssx":    float(row["zpssx"]),
-            "zpssy":    float(row["zpssy"]),
-            "zpssz":    float(row["zpssz"]),
-            "smarx":    float(row["smarx"]),
-            "smary":    float(row["smary"]),
-            "smarz":    float(row["smarz"]),
-            "zp.zpz1":  float(row["zpz1"]),
-            "zpsth":    float(row["zpsth"]),
-            "zps.zpsx": float(row["zpsx"]),
-            "zps.zpsz": float(row["zpsz"]),
-        }
-    else:
-        roi = {
-            "dssx":  float(row["dssx"]),
-            "dssy":  float(row["dssy"]),
-            "dssz":  float(row["dssz"]),
-            "dsx":   float(row["dsx"]),
-            "dsy":   float(row["dsy"]),
-            "dsz":   float(row["dsz"]),
-            "sbz":   float(row["sbz"]),
-            "dsth":  float(row["dsth"]),
-        }
+    # tbl = db.get_table(hdr, stream_name='baseline')
+    # row = tbl.iloc[0]
+    # if zp_flag:
+    #     roi = {
+    #         "zpssx":    float(row["zpssx"]),
+    #         "zpssy":    float(row["zpssy"]),
+    #         "zpssz":    float(row["zpssz"]),
+    #         "smarx":    float(row["smarx"]),
+    #         "smary":    float(row["smary"]),
+    #         "smarz":    float(row["smarz"]),
+    #         "zp.zpz1":  float(row["zpz1"]),
+    #         "zpsth":    float(row["zpsth"]),
+    #         "zps.zpsx": float(row["zpsx"]),
+    #         "zps.zpsz": float(row["zpsz"]),
+    #     }
+    # else:
+    #     roi = {
+    #         "dssx":  float(row["dssx"]),
+    #         "dssy":  float(row["dssy"]),
+    #         "dssz":  float(row["dssz"]),
+    #         "dsx":   float(row["dsx"]),
+    #         "dsy":   float(row["dsy"]),
+    #         "dsz":   float(row["dsz"]),
+    #         "sbz":   float(row["sbz"]),
+    #         "dsth":  float(row["dsth"]),
+    #     }
 
-    # 3) Compute unified step_size from scan_input
-    scan_info = start_doc.get("scan", {})
-    si = scan_info.get("scan_input", [])
-    if scan_info.get("type") == "2D_FLY_PANDA" and len(si) >= 3:
-        fast_start, fast_end, fast_N = si[0], si[1], si[2]
-        step_size = abs(fast_end - fast_start) / fast_N
-    else:
-        raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
+    # # 3) Compute unified step_size from scan_input
+    # scan_info = start_doc.get("scan", {})
+    # si = scan_info.get("scan_input", [])
+    # if scan_info.get("type") == "2D_FLY_PANDA" and len(si) >= 3:
+    #     fast_start, fast_end, fast_N = si[0], si[1], si[2]
+    #     step_size = abs(fast_end - fast_start) / fast_N
+    # else:
+        # raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
 
     # 4) Assemble the result dict
-    result = {
-        "scan_id":       int(sid),
-        "start_doc":     start_doc,
-        "roi_positions": roi,
-        "step_size":     float(step_size),
-    }
+    # result = {
+    #     "scan_id":       int(sid),
+    #     "start_doc":     start_doc,
+    #     "roi_positions": roi,
+    #     "step_size":     float(step_size),
+    # }
 
-    # 5) Optionally write out JSON
-    if save_to:
-        if os.path.isdir(save_to):
-            filename = os.path.join(save_to, f"scan_{sid}_params.json")
-        else:
-            filename = save_to if save_to.lower().endswith(".json") else save_to + ".json"
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, "w") as f:
-            json.dump(result, f, indent=2)
+    # # 5) Optionally write out JSON
+    # if save_to:
+    #     if os.path.isdir(save_to):
+    #         filename = os.path.join(save_to, f"scan_{sid}_params.json")
+    #     else:
+    #         filename = save_to if save_to.lower().endswith(".json") else save_to + ".json"
+    #     os.makedirs(os.path.dirname(filename), exist_ok=True)
+    #     with open(filename, "w") as f:
+    #         json.dump(result, f, indent=2)
 
-    return result
+    # return result
 
 def fly2d_qserver_scan_export(label,
                            dets,
@@ -964,29 +1012,29 @@ def send_fly2d_to_queue(label,
                         export_norm='sclr1_ch4',
                         data_wd='.',
                         pos_save_to=None):
-    det_names = [d.name for d in eval(dets)]
+    # det_names = [d.name for d in eval(dets)]
     roi_json = ""
-    if isinstance(roi_positions, dict):
-        roi_json = json.dumps(roi_positions)
-    elif isinstance(roi_positions, str):
-        roi_json = roi_positions
+    # if isinstance(roi_positions, dict):
+    #     roi_json = json.dumps(roi_positions)
+    # elif isinstance(roi_positions, str):
+    #     roi_json = roi_positions
 
-    RM.item_execute(BPlan("fly2d_qserver_scan_export",
-                      label,
-                      det_names,
-                      mot1, mot1_s, mot1_e, mot1_n,
-                      mot2, mot2_s, mot2_e, mot2_n,
-                      exp_t,
-                      roi_json,
-                      scan_id or "",
-                      zp_move_flag,
-                      smar_move_flag,
-                      ic1_count,
-                      json.dumps(elem_list or []),
-                      export_norm,
-                      data_wd,
-                      pos_save_to or ""
-                      ))
+    # RM.item_execute(BPlan("fly2d_qserver_scan_export",
+    #                   label,
+    #                   det_names,
+    #                   mot1, mot1_s, mot1_e, mot1_n,
+    #                   mot2, mot2_s, mot2_e, mot2_n,
+    #                   exp_t,
+    #                   roi_json,
+    #                   scan_id or "",
+    #                   zp_move_flag,
+    #                   smar_move_flag,
+    #                   ic1_count,
+    #                   json.dumps(elem_list or []),
+    #                   export_norm,
+    #                   data_wd,
+    #                   pos_save_to or ""
+    #                   ))
 
 
 def wait_for_queue_done(poll_interval=2.0):
@@ -1012,21 +1060,25 @@ def submit_and_export(**params):
     # 1) enqueue
     label = params.get('label', '')
     print(f"[SUBMIT] queueing scan '{label}' …")
-    send_fly2d_to_queue(**params)
+
+    valid_keys = inspect.signature(send_fly2d_to_queue).parameters.keys()
+    clean_params = {k: v for k, v in params.items() if k in valid_keys}
+    send_fly2d_to_queue(**clean_params)
 
     # 2) wait
     print("[WAIT] waiting for scan to finish…")
-    while True:
-        st = RM.status()
-        if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-            break
-        time.sleep(1.0)
+    # while True:
+    #     st = RM.status()
+    #     if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
+    #         break
+    #     time.sleep(1.0)
     print("[WAIT] scan complete.")
 
     # 3) get last scan_id and prepare output folder
-    hdr = db[-1]
-    last_id = hdr.start['scan_id']
+    # hdr = db[-1]
+    # last_id = hdr.start['scan_id']
     data_wd = params.get('data_wd', '.')
+    last_id = 1 #THIS IS TEMP REMOVE WHEN RUNNING 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"[EXPORT] saving all outputs to {out_dir}")
@@ -1046,6 +1098,99 @@ def submit_and_export(**params):
         save_to=out_dir
     )
 
+    elem_list = params.get("elem_list", "")
+    tiff_paths = wait_for_element_tiffs(elem_list, out_dir)
+
+    COLOR_ORDER = [
+    'red', 'blue', 'green', 'orange', 'purple', 'cyan', 'olive', 'yellow'
+    ]
+    precomputed_blobs = {color: {} for color in COLOR_ORDER}
+
+    # 
+    min_thresh = params.get("min_threshold_intensity", "")
+    min_area = params.get("min_threshold_area", "")
+    microns_per_pixel_x = params.get("microns_per_pixel_x", "")
+    microns_per_pixel_y = params.get("microns_per_pixel_y", "")
+    true_origin_x = params.get("true_origin_x", "")
+    true_origin_y = params.get("true_origin_y", "")
+
+    max_tiffs = min(len(tiff_paths), 8)
+    processed_elements = list(tiff_paths.keys())[:max_tiffs]
+
+    for idx, element in enumerate(processed_elements):
+        color = COLOR_ORDER[idx]
+        tiff_path = tiff_paths[element]
+        print(f"Processing {tiff_path.name} as color {color}")
+        try:
+            tiff_img = tiff.imread(str(tiff_path)).astype(np.float32)
+            tiff_norm, tiff_dilated = normalize_and_dilate(tiff_img)
+            b = detect_blobs(
+                tiff_dilated,
+                tiff_norm,
+                min_thresh,
+                min_area,
+                color,
+                tiff_path.name
+            )
+            precomputed_blobs[color][(min_thresh, min_area)] = b
+        except Exception as e:
+            print(f"❌ Error processing {tiff_path.name}: {e}")
+            trackback.print_exc()
+
+    # Only run unions if at least 2 colors are present
+    if len(processed_elements) >= 2:
+        unions = find_union_blobs(
+            precomputed_blobs,
+            microns_per_pixel_x,
+            microns_per_pixel_y,
+            true_origin_x,
+            true_origin_y
+        )
+
+        formatted_unions = {}
+
+        print("Processsing images now")
+        for idx, union in unions.items():
+            box_name = f"Union Box #{idx}"
+            formatted = {
+                "text": box_name,
+                "image_center": union["center"],
+                "image_length": union["length"],
+                "image_area_px²": union["area"],
+                "real_center_um": union["real_center_um"],
+                "real_size_um": union["real_size_um"],
+                "real_area_um²": union["real_area_um\u00b2"],
+                "real_top_left_um": union["real_top_left_um"],
+                "real_bottom_right_um": union["real_bottom_right_um"]
+            }
+
+            formatted_unions[box_name] = formatted
+
+            # # Print each formatted union box
+            # print(f"\n{box_name}")
+            # print(f"  Text:               {formatted['text']}")
+            # print(f"  Image Center:       {formatted['image_center']}")
+            # print(f"  Image Length:       {formatted['image_length']}")
+            # print(f"  Image Area (px²):   {formatted['image_area_px²']}")
+            # print(f"  Real Center (µm):   {formatted['real_center_um']}")
+            # print(f"  Real Size (µm):     {formatted['real_size_um']}")
+            # print(f"  Real Area (µm²):    {formatted['real_area_um²']}")
+            # print(f"  Real Top Left (µm): {formatted['real_top_left_um']}")
+            # print(f"  Real Bottom Right:  {formatted['real_bottom_right_um']}")
+            # print("-" * 50)
+
+        # Save to file
+        out_dir_p = Path(out_dir)  # Convert string to Path object
+        output_path = out_dir_p / "unions_output.json"#"data/headless_scan/unions_output.json"
+        with open(output_path, "w") as f:
+            json.dump(formatted_unions, f, indent=2)
+        print(f"\n✅ Union data saved to: {output_path}")
+        print()
+    #
+    print("done")
+    #add union function 
+    #add blob detection 
+    #add blob detection 
     print("[DONE] all exports complete.")
 
 
