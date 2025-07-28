@@ -159,21 +159,21 @@ def headless_send_queue_coarse_scan(output_dir, beamline_params, coarse_scan_pat
     load_and_queue(coarse_scan_path)
     #The function ^ would generate the tiff files to headless_scan
 
-    print("Coarse Scan to Queue Server")
-    print("\n=== Scan Parameters ===")
-    print("recover_pos_and_scan")
-    print(f"ROI (region of interest): {roi}")
-    print(f"Detector name (dets): {dets}")
-    print(f"X motor: {x_motor} (mot1), mot1_n: {mot1_n}")
-    print(f"Y motor: {y_motor} (mot2), mot2_n: {mot2_n}")
-    print(f"Exposure time (exp_t): {exp_time}")
-    print(f"Step size: {step_size}")
-    print("--- Scan Ranges ---")
-    print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
-    print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
-    print("------------------------")
+    # print("Coarse Scan to Queue Server")
+    # print("\n=== Scan Parameters ===")
+    # print("recover_pos_and_scan")
+    # print(f"ROI (region of interest): {roi}")
+    # print(f"Detector name (dets): {dets}")
+    # print(f"X motor: {x_motor} (mot1), mot1_n: {mot1_n}")
+    # print(f"Y motor: {y_motor} (mot2), mot2_n: {mot2_n}")
+    # print(f"Exposure time (exp_t): {exp_time}")
+    # print(f"Step size: {step_size}")
+    # print("--- Scan Ranges ---")
+    # print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
+    # print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
+    # print("------------------------")
 
-def headless_send_queue_fine_scan(directory_path, beamline_params):
+def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
     """
     Performs fine scan for each blob in the JSON file
     Reads all JSON files in a directory. Each file should contain a single key 
@@ -186,8 +186,8 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
     dets = beamline_params.get("det_name", "dets1")
     x_motor = beamline_params.get("mot1", "zpssx")
     y_motor = beamline_params.get("mot2", "zpssy")
-    mot1_n = beamline_params.get("mot1_n", 100)
-    mot2_n = beamline_params.get("mot2_n", 100)
+    # mot1_n = beamline_params.get("mot1_n", 100)
+    # mot2_n = beamline_params.get("mot2_n", 100)
 
     exp_t = beamline_params.get("exp_t", 0.01)
     step_size = beamline_params.get("step_size_fine", 100)
@@ -239,8 +239,13 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
             #     step_size #from json
             # ))
 
+            if scan_ID is not None:
+                roi = scan_ID
+            else:
+                roi = roi
+
             # RM.item_add(BPlan(
-            #     "recover_pos_from,SID_and_scan", #written
+            #     "recover_pos_from_SID_and_scan", #written
             #     label, #from folder of jsons
             #     roi, #calculated here
             #     dets, #from beamline_params
@@ -273,6 +278,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params):
 
         print(f"Queued scan(s) from JSON: {filename}") 
         print()
+    print("Fine scan is done")
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
@@ -1019,6 +1025,7 @@ def send_fly2d_to_queue(label,
     # elif isinstance(roi_positions, str):
     #     roi_json = roi_positions
 
+    print("Coarse scan")
     # RM.item_execute(BPlan("fly2d_qserver_scan_export",
     #                   label,
     #                   det_names,
@@ -1035,7 +1042,7 @@ def send_fly2d_to_queue(label,
     #                   data_wd,
     #                   pos_save_to or ""
     #                   ))
-
+    print("Coarse scan done")
 
 def wait_for_queue_done(poll_interval=2.0):
     """
@@ -1186,11 +1193,15 @@ def submit_and_export(**params):
             json.dump(formatted_unions, f, indent=2)
         print(f"\n✅ Union data saved to: {output_path}")
         print()
+
+        save_each_blob_as_individual_scan(formatted_unions, out_dir)
+
+
+        print("Performin fine scan now")
+        headless_send_queue_fine_scan(out_dir, params, last_id)
+
     #
-    print("done")
-    #add union function 
-    #add blob detection 
-    #add blob detection 
+    print("done") 
     print("[DONE] all exports complete.")
 
 

@@ -151,10 +151,8 @@ headless_send_queue_coarse_scan("data/headless_scan", beamline_params, initial_s
 #     print()
     #change the output_dir to the proper path later the out_dir from export and save 
 
-###Here we will load the unions_output.json before as formatted_unions before running it into the other functions to send to bluesky
-
-save_each_blob_as_individual_scan(formatted_unions, output_dir="data/headless_scan")
+# save_each_blob_as_individual_scan(formatted_unions, output_dir="data/headless_scan")
     #change the output_dir to the proper path later the out_dir from export and save 
-headless_send_queue_fine_scan("data/headless_scan", beamline_params, output_dir="data/headless_scan")
+# headless_send_queue_fine_scan("data/headless_scan", beamline_params, output_dir="data/headless_scan")
 # else:
     # print("Not enough TIFFs to perform union operation (need at least 2 Elements)")
