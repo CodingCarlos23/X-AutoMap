@@ -598,8 +598,73 @@ f"Length: {ub['length']} px<br>"
 
     def add_box(self):
         QMessageBox.information(self, "Add Union Box", "Click and drag to define a new union box.")
-        # Implementation of drawing custom boxes can be added here.
-        pass
+
+        self.original_mouse_press_event = self.graphics_view.mousePressEvent
+        self.original_mouse_release_event = self.graphics_view.mouseReleaseEvent
+        
+        temp_state = {'start': None}
+
+        def on_press(event):
+            if event.button() == Qt.LeftButton:
+                temp_state['start'] = self.graphics_view.mapToScene(event.pos()).toPoint()
+            else:
+                self.original_mouse_press_event(event)
+
+        def on_release(event):
+            if event.button() != Qt.LeftButton or temp_state['start'] is None:
+                self.original_mouse_release_event(event)
+                return
+
+            end = self.graphics_view.mapToScene(event.pos()).toPoint()
+            start = temp_state['start']
+            temp_state['start'] = None
+
+            self.graphics_view.mousePressEvent = self.original_mouse_press_event
+            self.graphics_view.mouseReleaseEvent = self.original_mouse_release_event
+
+            x1, y1 = start.x(), start.y()
+            x2, y2 = end.x(), end.y()
+            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+            length = max(abs(x2 - x1), abs(y2 - y1))
+            area = length * length
+
+            real_cx = (cx * self.app_state.microns_per_pixel_x) + self.app_state.true_origin_x
+            real_cy = (cy * self.app_state.microns_per_pixel_y) + self.app_state.true_origin_y
+            real_length_x = length * self.app_state.microns_per_pixel_x
+            real_length_y = length * self.app_state.microns_per_pixel_y
+            real_area = real_length_x * real_length_y
+            
+            new_union = {
+                'center': (cx, cy),
+                'length': length,
+                'area': area,
+                'real_center': (real_cx, real_cy),
+                'real_size': (real_length_x, real_length_y),
+                'real_area': real_area,
+            }
+
+            next_index = max(self.graphics_view.union_dict.keys(), default=0) + 1
+            self.graphics_view.union_dict[next_index] = new_union
+
+            item_text = f"Custom Box #{self.custom_box_number}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, self.custom_box_number)
+            item.setToolTip(self._format_union_tooltip(new_union, self.custom_box_number))
+            self.union_list_widget.addItem(item)
+            
+            self.custom_box_number += 1
+
+            if self.app_state.selected_directory:
+                output_dir = Path(self.app_state.selected_directory) / "data" / "gui_scans"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / "union_blobs.pkl"
+                with open(output_path, "wb") as f:
+                    pickle.dump(self.graphics_view.union_dict, f)
+
+            self.update_boxes()
+
+        self.graphics_view.mousePressEvent = on_press
+        self.graphics_view.mouseReleaseEvent = on_release
 
     def union_function(self):
         blobs = self.get_current_blobs()
