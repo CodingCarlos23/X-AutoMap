@@ -19,3 +19,4 @@ secret_config.yaml
 #Ignore this folder
 models/
 
+data/
