@@ -30,8 +30,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect, QTimer
 
-import globals
-from globals import update_boxes, union_box_drawer, get_current_blobs
+# import globals
+# from globals import update_boxes, union_box_drawer, get_current_blobs
 
 def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="data/gui_scans/queued_regions.json"):
     """
@@ -537,10 +537,10 @@ def structure_blob_tooltips(json_path):
 
     # print(f"✅ Structured tooltip data saved to {json_path}")
 
-def resize_if_needed(img, name):
-        if img.shape != globals.target_shape:
-            # print(f"Resizing {name} from {img.shape} → {globals.target_shape}")
-            return cv2.resize(img, (globals.target_shape[1], globals.target_shape[0]), interpolation=cv2.INTER_AREA)
+def resize_if_needed(img, name, target_shape):
+        if img.shape != target_shape:
+            # print(f"Resizing {name} from {img.shape} → {target_shape}")
+            return cv2.resize(img, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_AREA)
         return img
 
 def normalize_and_dilate(img):
