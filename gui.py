@@ -100,7 +100,7 @@ class MainWindow(QWidget):
     def __init__(self, app_state):
         super().__init__()
         self.app_state = app_state
-        self.setWindowTitle("SULI 2025 - Automated Experimentation")
+        self.setWindowTitle("X-AutoMap")
         self.setGeometry(100, 100, 1900, 1000)
         self._init_ui_elements()
         self._init_ui()
@@ -142,28 +142,34 @@ class MainWindow(QWidget):
     def _create_setup_screen(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        dir_layout = QHBoxLayout()
+
+        # --- Top buttons and label using QGridLayout ---
+        top_grid = QGridLayout()
+        
         dir_btn = QPushButton("Select Directory")
         dir_btn.clicked.connect(self.on_dir_selected)
+        top_grid.addWidget(dir_btn, 0, 0)
+
         self.dir_label = QLabel("No directory selected.")
-        dir_layout.addWidget(dir_btn)
-        dir_layout.addWidget(self.dir_label)
-        layout.addLayout(dir_layout)
+        top_grid.addWidget(self.dir_label, 0, 1, Qt.AlignLeft)
 
         load_backup_btn = QPushButton("Load Backup")
         load_backup_btn.clicked.connect(self.on_load_backup_clicked)
-        layout.addWidget(load_backup_btn)
+        top_grid.addWidget(load_backup_btn, 1, 0)
+        
+        top_grid.setColumnStretch(1, 1) # Allow column 1 to expand
+        layout.addLayout(top_grid)
 
         self.file_list_widget.itemChanged.connect(self.update_selection)
         layout.addWidget(self.file_list_widget)
         param_layout = QGridLayout()
         param_layout.addWidget(QLabel("Microns per Pixel X:"), 0, 0)
         self.float_input_micron_x.setRange(0, 1000)
-        self.float_input_micron_x.setValue(1.25)
+        self.float_input_micron_x.setValue(1.00)
         param_layout.addWidget(self.float_input_micron_x, 0, 1)
         param_layout.addWidget(QLabel("Microns per Pixel Y:"), 1, 0)
         self.float_input_micron_y.setRange(0, 1000)
-        self.float_input_micron_y.setValue(1.25)
+        self.float_input_micron_y.setValue(1.00)
         param_layout.addWidget(self.float_input_micron_y, 1, 1)
         param_layout.addWidget(QLabel("True Origin X:"), 2, 0)
         self.origin_x_input.setRange(-10000, 10000)
@@ -172,9 +178,15 @@ class MainWindow(QWidget):
         self.origin_y_input.setRange(-10000, 10000)
         param_layout.addWidget(self.origin_y_input, 3, 1)
         layout.addLayout(param_layout)
+
+        # --- Confirm button ---
+        confirm_layout = QHBoxLayout()
+        confirm_layout.addStretch()
         confirm_btn = QPushButton("Confirm and Load Images")
         confirm_btn.clicked.connect(self.on_confirm_clicked)
-        layout.addWidget(confirm_btn)
+        confirm_layout.addWidget(confirm_btn)
+        layout.addLayout(confirm_layout)
+
         return widget
 
     def on_load_backup_clicked(self):
@@ -303,6 +315,60 @@ class MainWindow(QWidget):
         controls_widget = QWidget()
         controls_layout = QVBoxLayout(controls_widget)
 
+        # Exit/Reset
+        exit_btn = QPushButton("Exit")
+        exit_btn.clicked.connect(self.close)
+        reset_btn = QPushButton("Reset View")
+        reset_btn.clicked.connect(lambda: self.graphics_view.resetTransform())
+        
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(reset_btn)
+        button_layout.addWidget(exit_btn)
+        controls_layout.addLayout(button_layout)
+
+        # Lists and buttons
+        self.union_list_widget.setSelectionMode(QListWidget.MultiSelection)
+        self.union_list_widget.itemSelectionChanged.connect(self.on_union_item_selected)
+        
+        send_to_list_btn = QPushButton("Add to list")
+        send_to_list_btn.clicked.connect(self.send_to_list)
+        get_elements_btn = QPushButton("Get all elements")
+        get_elements_btn.clicked.connect(self.get_elements_list)
+        union_btn = QPushButton("Get unions")
+        union_btn.clicked.connect(self.union_function)
+        add_box_btn = QPushButton("Add Box")
+        add_box_btn.clicked.connect(self.add_box)
+
+        union_list_layout = QVBoxLayout()
+        union_list_layout.addWidget(self.union_list_widget)
+        union_list_layout.addWidget(send_to_list_btn)
+        union_list_layout.addWidget(get_elements_btn)
+        union_list_layout.addWidget(union_btn)
+        union_list_layout.addWidget(add_box_btn)
+
+        send_to_queue_btn = QPushButton("Send to Queue Server")
+        send_to_queue_btn.clicked.connect(self.send_to_queue_server)
+        clear_queue_btn = QPushButton("Clear")
+        clear_queue_btn.clicked.connect(self.clear_queue_server_list)
+
+        queue_list_layout = QVBoxLayout()
+        queue_list_layout.addWidget(self.queue_server_list)
+        queue_list_layout.addWidget(send_to_queue_btn)
+        queue_list_layout.addWidget(clear_queue_btn)
+
+        dual_list_layout = QHBoxLayout()
+        dual_list_layout.addLayout(union_list_layout)
+        dual_list_layout.addLayout(queue_list_layout)
+        controls_layout.addLayout(dual_list_layout)
+
+        # Coordinates
+        coord_layout = QHBoxLayout()
+        coord_layout.addWidget(self.x_label)
+        coord_layout.addWidget(self.y_label)
+        coord_layout.addWidget(self.x_micron_label)
+        coord_layout.addWidget(self.y_micron_label)
+        controls_layout.addLayout(coord_layout)
+
         # Legend
         legend_layout = QHBoxLayout()
         legend_label = QLabel("Legend")
@@ -361,60 +427,6 @@ class MainWindow(QWidget):
             vbox.addWidget(slider)
             area_slider_layout.addLayout(vbox)
         controls_layout.addLayout(area_slider_layout)
-
-        # Lists and buttons
-        self.union_list_widget.setSelectionMode(QListWidget.MultiSelection)
-        self.union_list_widget.itemSelectionChanged.connect(self.on_union_item_selected)
-        
-        send_to_list_btn = QPushButton("Add to list")
-        send_to_list_btn.clicked.connect(self.send_to_list)
-        get_elements_btn = QPushButton("Get all elements")
-        get_elements_btn.clicked.connect(self.get_elements_list)
-        union_btn = QPushButton("Get unions")
-        union_btn.clicked.connect(self.union_function)
-        add_box_btn = QPushButton("Add Box")
-        add_box_btn.clicked.connect(self.add_box)
-
-        union_list_layout = QVBoxLayout()
-        union_list_layout.addWidget(self.union_list_widget)
-        union_list_layout.addWidget(send_to_list_btn)
-        union_list_layout.addWidget(get_elements_btn)
-        union_list_layout.addWidget(union_btn)
-        union_list_layout.addWidget(add_box_btn)
-
-        send_to_queue_btn = QPushButton("Send to Queue Server")
-        send_to_queue_btn.clicked.connect(self.send_to_queue_server)
-        clear_queue_btn = QPushButton("Clear")
-        clear_queue_btn.clicked.connect(self.clear_queue_server_list)
-
-        queue_list_layout = QVBoxLayout()
-        queue_list_layout.addWidget(self.queue_server_list)
-        queue_list_layout.addWidget(send_to_queue_btn)
-        queue_list_layout.addWidget(clear_queue_btn)
-
-        dual_list_layout = QHBoxLayout()
-        dual_list_layout.addLayout(union_list_layout)
-        dual_list_layout.addLayout(queue_list_layout)
-        controls_layout.addLayout(dual_list_layout)
-
-        # Coordinates
-        coord_layout = QHBoxLayout()
-        coord_layout.addWidget(self.x_label)
-        coord_layout.addWidget(self.y_label)
-        coord_layout.addWidget(self.x_micron_label)
-        coord_layout.addWidget(self.y_micron_label)
-        controls_layout.addLayout(coord_layout)
-
-        # Exit/Reset
-        exit_btn = QPushButton("Exit")
-        exit_btn.clicked.connect(self.close)
-        reset_btn = QPushButton("Reset View")
-        reset_btn.clicked.connect(lambda: self.graphics_view.resetTransform())
-        
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(reset_btn)
-        button_layout.addWidget(exit_btn)
-        controls_layout.addLayout(button_layout)
 
         controls_widget.setLayout(controls_layout)
         self.main_layout.addWidget(controls_widget)
