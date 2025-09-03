@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QLineEdit, QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
-    QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QGridLayout
+    QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QGridLayout, QGraphicsEllipseItem
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect, QTimer, QPoint
@@ -77,21 +77,21 @@ class ZoomableGraphicsView(QGraphicsView):
         self.blobs = blobs
         self.visible_colors = visible_colors
 
-    def highlight_selected_union_boxes(self, selected_items):
+    def highlight_selected_boxes(self, selected_items):
         for item in self.highlight_items:
             self.scene().removeItem(item)
         self.highlight_items.clear()
     
         for item in selected_items:
             text = item.toolTip()
-            center_match = re.search(r"Center: (\d+), (\d+)", text)
-            length_match = re.search(r"Length: (\d+)\\s*px", text)
+            center_match = re.search(r"Center: \((\d+), (\d+)\)", text)
+            length_match = re.search(r"Length: (\d+)\s*px", text)
     
             if center_match and length_match:
                 x, y, length = int(center_match.group(1)), int(center_match.group(2)), int(length_match.group(1))
                 radius = length / 2 + 5
                 circle = QGraphicsEllipseItem(x - radius, y - radius, radius * 2, radius * 2)
-                circle.setPen(QPen(QColor("yellow"), 2, Qt.DashLine))
+                circle.setPen(QPen(QColor("yellow"), 2, Qt.SolidLine))
                 circle.setZValue(100)
                 self.scene().addItem(circle)
                 self.highlight_items.append(circle)
@@ -594,7 +594,7 @@ f"Length: {ub['length']} px<br>"
 
     def on_union_item_selected(self):
         selected_items = self.union_list_widget.selectedItems()
-        self.graphics_view.highlight_selected_union_boxes(selected_items)
+        self.graphics_view.highlight_selected_boxes(selected_items)
 
     def add_box(self):
         QMessageBox.information(self, "Add Union Box", "Click and drag to define a new union box.")
