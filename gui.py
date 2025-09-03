@@ -149,6 +149,11 @@ class MainWindow(QWidget):
         dir_layout.addWidget(dir_btn)
         dir_layout.addWidget(self.dir_label)
         layout.addLayout(dir_layout)
+
+        load_backup_btn = QPushButton("Load Backup")
+        load_backup_btn.clicked.connect(self.on_load_backup_clicked)
+        layout.addWidget(load_backup_btn)
+
         self.file_list_widget.itemChanged.connect(self.update_selection)
         layout.addWidget(self.file_list_widget)
         param_layout = QGridLayout()
@@ -171,6 +176,36 @@ class MainWindow(QWidget):
         confirm_btn.clicked.connect(self.on_confirm_clicked)
         layout.addWidget(confirm_btn)
         return widget
+
+    def on_load_backup_clicked(self):
+        tiff_paths, _ = QFileDialog.getOpenFileNames(self, "Select 3 TIFF files", "", "TIFF Files (*.tif *.tiff)")
+        if len(tiff_paths) != 3:
+            QMessageBox.warning(self, "Invalid Selection", "Please select exactly 3 TIFF files.")
+            return
+
+        pkl_path, _ = QFileDialog.getOpenFileName(self, "Select precomputed_blobs.pkl file", "", "Pickle Files (*.pkl)")
+        if not pkl_path:
+            return
+
+        self.app_state.microns_per_pixel_x = self.float_input_micron_x.value()
+        self.app_state.microns_per_pixel_y = self.float_input_micron_y.value()
+        self.app_state.true_origin_x = self.origin_x_input.value()
+        self.app_state.true_origin_y = self.origin_y_input.value()
+
+        self.app_state.img_paths = sorted(tiff_paths)
+        self.app_state.file_names = [os.path.basename(p) for p in self.app_state.img_paths]
+        self.app_state.element_colors = ['red', 'green', 'blue']
+        self.app_state.thresholds = {color: 100 for color in self.app_state.element_colors}
+        self.app_state.area_thresholds = {color: 200 for color in self.app_state.element_colors}
+
+        try:
+            with open(pkl_path, 'rb') as f:
+                self.app_state.precomputed_blobs = pickle.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Error Loading File", f"Could not load pickle file: {e}")
+            return
+
+        self._init_analysis_gui(from_backup=True)
 
     def on_dir_selected(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Directory")
@@ -219,7 +254,7 @@ class MainWindow(QWidget):
         self.app_state.area_thresholds = {color: 200 for color in self.app_state.element_colors}
         self._init_analysis_gui()
 
-    def _init_analysis_gui(self):
+    def _init_analysis_gui(self, from_backup=False):
         self.setup_widget.setParent(None)
         main_widget = QWidget()
         self.main_layout = QHBoxLayout(main_widget)
@@ -236,7 +271,11 @@ class MainWindow(QWidget):
         self.progress_bar.setParent(None)
         self.outer_layout.addWidget(self.progress_bar)
 
-        QTimer.singleShot(100, self._start_blob_computation)
+        if from_backup:
+            self.progress_bar.hide()
+            self.update_boxes()
+        else:
+            QTimer.singleShot(100, self._start_blob_computation)
 
 
     def _create_image_view_panel(self):
