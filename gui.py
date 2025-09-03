@@ -470,6 +470,10 @@ class MainWindow(QWidget):
             self.progress_bar.setValue(event.value)
         elif isinstance(event, ComputationFinishedEvent):
             self.progress_bar.hide()
+            if self.app_state.selected_directory and self.app_state.precomputed_blobs:
+                output_path = Path(self.app_state.selected_directory) / "precomputed_blobs.pkl"
+                with open(output_path, "wb") as f:
+                    pickle.dump(self.app_state.precomputed_blobs, f)
             self.update_boxes()
 
 
@@ -706,9 +710,7 @@ f"Length: {ub['length']} px<br>"
             self.custom_box_number += 1
 
             if self.app_state.selected_directory:
-                output_dir = Path(self.app_state.selected_directory) / "data" / "gui_scans"
-                output_dir.mkdir(parents=True, exist_ok=True)
-                output_path = output_dir / "union_blobs.pkl"
+                output_path = Path(self.app_state.selected_directory) / "union_blobs.pkl"
                 with open(output_path, "wb") as f:
                     pickle.dump(self.graphics_view.union_dict, f)
 
@@ -757,6 +759,11 @@ f"Length: {ub['length']} px<br>"
             item = QListWidgetItem(f"Union Box #{idx}")
             item.setToolTip(self._format_union_tooltip(ub, idx))
             self.union_list_widget.addItem(item)
+
+        if self.app_state.selected_directory:
+            output_path = Path(self.app_state.selected_directory) / "union_blobs.pkl"
+            with open(output_path, "wb") as f:
+                pickle.dump(self.graphics_view.union_dict, f)
         
         self.update_boxes()
 
