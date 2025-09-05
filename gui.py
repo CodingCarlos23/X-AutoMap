@@ -710,9 +710,10 @@ f"Length: {ub['length']} px<br>"
             self.custom_box_number += 1
 
             if self.app_state.selected_directory:
-                output_path = Path(self.app_state.selected_directory) / "union_blobs.pkl"
-                with open(output_path, "wb") as f:
-                    pickle.dump(self.graphics_view.union_dict, f)
+                output_path = Path(self.app_state.selected_directory) / "union_blobs.json"
+                serializable_dict = make_json_serializable(self.graphics_view.union_dict)
+                with open(output_path, "w") as f:
+                    json.dump(serializable_dict, f, indent=4)
 
             self.update_boxes()
 
@@ -761,9 +762,10 @@ f"Length: {ub['length']} px<br>"
             self.union_list_widget.addItem(item)
 
         if self.app_state.selected_directory:
-            output_path = Path(self.app_state.selected_directory) / "union_blobs.pkl"
-            with open(output_path, "wb") as f:
-                pickle.dump(self.graphics_view.union_dict, f)
+            output_path = Path(self.app_state.selected_directory) / "union_blobs.json"
+            serializable_dict = make_json_serializable(self.graphics_view.union_dict)
+            with open(output_path, "w") as f:
+                json.dump(serializable_dict, f, indent=4)
         
         self.update_boxes()
 

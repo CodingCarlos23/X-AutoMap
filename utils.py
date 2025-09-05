@@ -192,13 +192,19 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
     exp_t = beamline_params.get("exp_t", 0.01)
     step_size = beamline_params.get("step_size_fine", 100)
 
+    pattern = re.compile(r"scan_\d+_params\.json$")  # matches scan_123_params.json
+
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
-        if filename == "unions_output.json":
+        if filename in ("unions_output.json", "union_blobs.json"):
+            continue
+        if pattern.match(filename):   # ignore scan_##_params.json
             continue
 
         json_path = os.path.join(directory_path, filename)
+        print(f"\n=== Now parsing: {filename} ===")
+
         with open(json_path, "r") as f:
             data = json.load(f)
 
