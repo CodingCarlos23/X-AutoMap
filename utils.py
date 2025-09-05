@@ -111,16 +111,12 @@ def save_each_blob_as_individual_scan(json_safe_data, output_dir="scans"):
         with open(file_path, "w") as f:
             json.dump(scan_data, f, indent=4)
 
-def headless_send_queue_coarse_scan(output_dir, beamline_params, coarse_scan_path):
+def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path):
     """
     Performs coarse scan using only parameters from beamline_params.
     The output directory path is constructed and can be used later.
     No JSON files are read in this function.
-    """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(exist_ok=True)
-    filepath = output_dir  # This can be used later as needed
-
+    """ 
     dets = beamline_params.get("det_name", "dets_fs")
     x_motor = beamline_params.get("mot1", "zpssx")
     y_motor = beamline_params.get("mot2", "zpssy")
