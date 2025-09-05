@@ -28,12 +28,12 @@ def load_json_file(path):
 
 def load_parameters(watch_dir):
     """Loads all required JSON parameter files."""
-    print("Looking for analysis_params.json, beamline_params.json, and scan_200_params.json")
+    print("Looking for initial_scan.json, beamline_params.json, and scan_200_params.json")
     try:
-        analysis_params = load_json_file(watch_dir / "analysis_params.json")
+        analysis_params = load_json_file(watch_dir / "initial_scan.json")
         beamline_params = load_json_file(watch_dir / "beamline_params.json")
         scan_params = load_json_file(watch_dir / "scan_200_params.json")
-        print("Loaded analysis_params.json:", analysis_params)
+        print("Loaded initial_scan.json:", analysis_params)
         print("Loaded beamline_params.json:", beamline_params)
         print("Loaded scan_200_params.json:", scan_params)
         return analysis_params, beamline_params, scan_params
@@ -57,7 +57,7 @@ def run_headless_processing():
     state.microns_per_pixel_y = scan_params.get("microns_per_pixel_y")
     state.true_origin_x = scan_params.get("true_origin_x")
     state.true_origin_y = scan_params.get("true_origin_y")
-    state.element_colors = analysis_params.get("element_list", [])
+    state.element_colors = analysis_params.get("elem_list", [])
 
     # Perform coarse scan
     print("\nStarting coarse scan...")
