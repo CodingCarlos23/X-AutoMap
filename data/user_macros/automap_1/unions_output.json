@@ -2,11 +2,11 @@
   "Union Box #1": {
     "text": "Union Box #1",
     "image_center": [
-      479,
-      753
+      479.0,
+      753.0
     ],
-    "image_length": 24,
-    "image_area_px\u00b2": 576,
+    "image_length": 24.0,
+    "image_area_px\u00b2": 576.0,
     "real_center_um": [
       129.75,
       208.25
@@ -28,14 +28,14 @@
   "Union Box #2": {
     "text": "Union Box #2",
     "image_center": [
-      500,
-      611
+      500.0,
+      611.3333333333334
     ],
-    "image_length": 32,
-    "image_area_px\u00b2": 1024,
+    "image_length": 32.0,
+    "image_area_px\u00b2": 1024.0,
     "real_center_um": [
       135.0,
-      172.75
+      172.83333333333334
     ],
     "real_size_um": [
       8.0,
@@ -44,23 +44,23 @@
     "real_area_um\u00b2": 64.0,
     "real_top_left_um": [
       131.0,
-      168.75
+      168.83333333333334
     ],
     "real_bottom_right_um": [
       139.0,
-      176.75
+      176.83333333333334
     ]
   },
   "Union Box #3": {
     "text": "Union Box #3",
     "image_center": [
-      481,
-      567
+      481.6666666666667,
+      567.0
     ],
-    "image_length": 32,
-    "image_area_px\u00b2": 1024,
+    "image_length": 32.0,
+    "image_area_px\u00b2": 1024.0,
     "real_center_um": [
-      130.25,
+      130.41666666666669,
       161.75
     ],
     "real_size_um": [
@@ -69,25 +69,25 @@
     ],
     "real_area_um\u00b2": 64.0,
     "real_top_left_um": [
-      126.25,
+      126.41666666666667,
       157.75
     ],
     "real_bottom_right_um": [
-      134.25,
+      134.41666666666669,
       165.75
     ]
   },
   "Union Box #4": {
     "text": "Union Box #4",
     "image_center": [
-      488,
-      562
+      488.0,
+      562.6666666666666
     ],
-    "image_length": 37,
-    "image_area_px\u00b2": 1369,
+    "image_length": 37.0,
+    "image_area_px\u00b2": 1369.0,
     "real_center_um": [
       132.0,
-      160.5
+      160.66666666666666
     ],
     "real_size_um": [
       9.25,
@@ -96,11 +96,11 @@
     "real_area_um\u00b2": 85.5625,
     "real_top_left_um": [
       127.5,
-      156.0
+      156.16666666666666
     ],
     "real_bottom_right_um": [
       136.75,
-      165.25
+      165.41666666666666
     ]
   }
 }

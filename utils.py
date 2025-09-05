@@ -561,7 +561,7 @@ def boxes_intersect(b1, b2):
 def union_center(b1, b2, b3):
     x_vals = [b1['center'][0], b2['center'][0], b3['center'][0]]
     y_vals = [b1['center'][1], b2['center'][1], b3['center'][1]]
-    return (sum(x_vals) // 3, sum(y_vals) // 3)
+    return (sum(x_vals) / 3, sum(y_vals) / 3)
 
 def union_box_dimensions(b1, b2, b3):
     xs = [b1['box_x'], b2['box_x'], b3['box_x']]
@@ -579,12 +579,12 @@ def union_box_dimensions(b1, b2, b3):
     length = max(width, height)  # square side length
     area = length * length
 
-    return length, area
+    return float(length), float(area)
     
 def union_center(b1, b2, b3):
     x_vals = [b1['center'][0], b2['center'][0], b3['center'][0]]
     y_vals = [b1['center'][1], b2['center'][1], b3['center'][1]]
-    return (sum(x_vals) // 3, sum(y_vals) // 3)
+    return (sum(x_vals) / 3, sum(y_vals) / 3)
 
 def union_box_dimensions(b1, b2, b3):
     xs = [b1['box_x'], b2['box_x'], b3['box_x']]
@@ -602,7 +602,7 @@ def union_box_dimensions(b1, b2, b3):
     length = max(width, height)  # square side length
     area = length * length
 
-    return length, area
+    return float(length), float(area)
             
 
 def union_function():
