@@ -20,6 +20,12 @@ from bluesky_queueserver_api import BPlan
 from bluesky_queueserver_api.zmq import REManagerAPI
 RM = REManagerAPI()
 
+sys.path.insert(0, '/nsls2/data2/hxn/shared/config/bluesky_overlay/2023-1.0-py310-tiled/lib/python3.10/site-packages')
+
+from hxntools.CompositeBroker import db
+from hxntools.scan_info import get_scan_positions
+
+
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
@@ -193,10 +199,14 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
     exp_t = beamline_params.get("exp_t", 0.01)
     step_size = beamline_params.get("step_size_fine", 100)
 
+    pattern = re.compile(r"scan_\d+_params\.json$")
+
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
         if filename == "unions_output.json":
+            continue
+        if pattern.match(filename):
             continue
 
         json_path = os.path.join(directory_path, filename)
@@ -833,25 +843,25 @@ def _get_flyscan_dimensions(hdr):
 
 def export_xrf_roi_data(scan_id, norm = 'sclr1_ch4', elem_list = [], wd = '.'):
 
-    # hdr = db[int(scan_id)]
-    # scan_id = hdr.start["scan_id"]
+    hdr = db[int(scan_id)]
+    scan_id = hdr.start["scan_id"]
    
     channels = [1, 2, 3]
-    #print(f"{elem_list = }")
+    print(f"{elem_list = }")
     print(f"[DATA] fetching XRF ROIs")
-    # scan_dim = _get_flyscan_dimensions(hdr)
+    scan_dim = _get_flyscan_dimensions(hdr)
     print(f"[DATA] fetching scalar values")
 
-    # scalar = np.array(list(hdr.data(norm))).squeeze()
+    scalar = np.array(list(hdr.data(norm))).squeeze()
     print(f"[DATA] fetching scalar {norm} values done")
 
-    # for elem in sorted(elem_list):
-        # roi_keys = [f'Det{chan}_{elem}' for chan in channels]
-        # spectrum = np.sum([np.array(list(hdr.data(roi)), dtype=np.float32).squeeze() for roi in roi_keys], axis=0)
-        # if norm !=None:
-            # spectrum = spectrum/scalar
-        # xrf_img = spectrum.reshape(scan_dim)
-        # tiff.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
+    for elem in sorted(elem_list):
+        roi_keys = [f'Det{chan}_{elem}' for chan in channels]
+        spectrum = np.sum([np.array(list(hdr.data(roi)), dtype=np.float32).squeeze() for roi in roi_keys], axis=0)
+        if norm !=None:
+            spectrum = spectrum/scalar
+        xrf_img = spectrum.reshape(scan_dim)
+        tiff.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
 
 
 def export_scan_params(sid=-1, zp_flag=True, save_to=None):
@@ -866,65 +876,65 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None):
       - step_size (computed from scan_input for 2D_FLY_PANDA)
     """
     # 1) Pull the header
-    # hdr = db[int(sid)]
-    # start_doc = dict(hdr.start)  # cast to plain dict
+    hdr = db[int(sid)]
+    start_doc = dict(hdr.start)  # cast to plain dict
 
-    # 2) Grab the baseline table and build the ROI dict
-    # tbl = db.get_table(hdr, stream_name='baseline')
-    # row = tbl.iloc[0]
-    # if zp_flag:
-    #     roi = {
-    #         "zpssx":    float(row["zpssx"]),
-    #         "zpssy":    float(row["zpssy"]),
-    #         "zpssz":    float(row["zpssz"]),
-    #         "smarx":    float(row["smarx"]),
-    #         "smary":    float(row["smary"]),
-    #         "smarz":    float(row["smarz"]),
-    #         "zp.zpz1":  float(row["zpz1"]),
-    #         "zpsth":    float(row["zpsth"]),
-    #         "zps.zpsx": float(row["zpsx"]),
-    #         "zps.zpsz": float(row["zpsz"]),
-    #     }
-    # else:
-    #     roi = {
-    #         "dssx":  float(row["dssx"]),
-    #         "dssy":  float(row["dssy"]),
-    #         "dssz":  float(row["dssz"]),
-    #         "dsx":   float(row["dsx"]),
-    #         "dsy":   float(row["dsy"]),
-    #         "dsz":   float(row["dsz"]),
-    #         "sbz":   float(row["sbz"]),
-    #         "dsth":  float(row["dsth"]),
-    #     }
+    #2) Grab the baseline table and build the ROI dict
+    tbl = db.get_table(hdr, stream_name='baseline')
+    row = tbl.iloc[0]
+    if zp_flag:
+        roi = {
+            "zpssx":    float(row["zpssx"]),
+            "zpssy":    float(row["zpssy"]),
+            "zpssz":    float(row["zpssz"]),
+            "smarx":    float(row["smarx"]),
+            "smary":    float(row["smary"]),
+            "smarz":    float(row["smarz"]),
+            "zp.zpz1":  float(row["zpz1"]),
+            "zpsth":    float(row["zpsth"]),
+            "zps.zpsx": float(row["zpsx"]),
+            "zps.zpsz": float(row["zpsz"]),
+        }
+    else:
+        roi = {
+            "dssx":  float(row["dssx"]),
+            "dssy":  float(row["dssy"]),
+            "dssz":  float(row["dssz"]),
+            "dsx":   float(row["dsx"]),
+            "dsy":   float(row["dsy"]),
+            "dsz":   float(row["dsz"]),
+            "sbz":   float(row["sbz"]),
+            "dsth":  float(row["dsth"]),
+        }
 
-    # # 3) Compute unified step_size from scan_input
-    # scan_info = start_doc.get("scan", {})
-    # si = scan_info.get("scan_input", [])
-    # if scan_info.get("type") == "2D_FLY_PANDA" and len(si) >= 3:
-    #     fast_start, fast_end, fast_N = si[0], si[1], si[2]
-    #     step_size = abs(fast_end - fast_start) / fast_N
-    # else:
-        # raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
+    # 3) Compute unified step_size from scan_input
+    scan_info = start_doc.get("scan", {})
+    si = scan_info.get("scan_input", [])
+    if scan_info.get("type") == "2D_FLY_PANDA" and len(si) >= 3:
+        fast_start, fast_end, fast_N = si[0], si[1], si[2]
+        step_size = abs(fast_end - fast_start) / fast_N
+    else:
+        raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
 
-    # 4) Assemble the result dict
-    # result = {
-    #     "scan_id":       int(sid),
-    #     "start_doc":     start_doc,
-    #     "roi_positions": roi,
-    #     "step_size":     float(step_size),
-    # }
+    #4) Assemble the result dict
+    result = {
+        "scan_id":       int(sid),
+        "start_doc":     start_doc,
+        "roi_positions": roi,
+        "step_size":     float(step_size),
+    }
 
-    # # 5) Optionally write out JSON
-    # if save_to:
-    #     if os.path.isdir(save_to):
-    #         filename = os.path.join(save_to, f"scan_{sid}_params.json")
-    #     else:
-    #         filename = save_to if save_to.lower().endswith(".json") else save_to + ".json"
-    #     os.makedirs(os.path.dirname(filename), exist_ok=True)
-    #     with open(filename, "w") as f:
-    #         json.dump(result, f, indent=2)
+    # 5) Optionally write out JSON
+    if save_to:
+        if os.path.isdir(save_to):
+            filename = os.path.join(save_to, f"scan_{sid}_params.json")
+        else:
+            filename = save_to if save_to.lower().endswith(".json") else save_to + ".json"
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, "w") as f:
+            json.dump(result, f, indent=2)
 
-    # return result
+    return result
 
 def fly2d_qserver_scan_export(label,
                            dets,
@@ -1094,7 +1104,7 @@ def submit_and_export(**params):
     hdr = db[-1]
     last_id = hdr.start['scan_id']
     data_wd = params.get('data_wd', '.')
-    last_id = 1 #THIS IS TEMP REMOVE WHEN RUNNING 
+    last_id = 341431 #THIS IS TEMP REMOVE WHEN RUNNING 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"[EXPORT] saving all outputs to {out_dir}")
