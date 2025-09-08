@@ -591,7 +591,9 @@ class MainWindow(QWidget):
     def _show_tooltip(self, event, html):
         self.hover_label.setText(html)
         self.hover_label.adjustSize()
-        self.hover_label.move(self.graphics_view.mapTo(self, event.pos()) + QPoint(15, -30))
+        mouse_pos = self.graphics_view.mapTo(self, event.pos())
+        new_pos = QPoint(mouse_pos.x() + 20, mouse_pos.y() - self.hover_label.height() - 10)
+        self.hover_label.move(new_pos)
         self.hover_label.show()
 
     def _format_blob_tooltip(self, blob):

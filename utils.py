@@ -30,8 +30,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect, QTimer
 
-# import globals
-# from globals import update_boxes, union_box_drawer, get_current_blobs
 
 def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="data/gui_scans/queued_regions.json"):
     """
