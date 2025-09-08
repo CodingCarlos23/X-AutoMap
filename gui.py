@@ -1,8 +1,5 @@
 import os
-import sys
 import re
-import time
-import copy
 import json
 import pickle
 import threading
@@ -14,20 +11,18 @@ import numpy as np
 import tifffile as tiff
 
 from PyQt5.QtWidgets import (
-    QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QLabel, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
-    QLineEdit, QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
-    QFrame, QMessageBox, QDoubleSpinBox, QProgressBar, QGridLayout, QGraphicsEllipseItem
+    QCheckBox, QSlider, QFileDialog, QListWidget, QListWidgetItem,
+    QMessageBox, QDoubleSpinBox, QProgressBar, QGridLayout, QGraphicsEllipseItem
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
-from PyQt5.QtCore import Qt, QRect, QTimer, QPoint
+from PyQt5.QtCore import Qt, QRect, QTimer, QPoint, QEvent
 
 from app_state import AppState
 from utils import (
-    resize_if_needed, normalize_and_dilate, start_blob_computation,
-    make_json_serializable,
-    save_each_blob_as_individual_scan, structure_blob_tooltips,
-    send_json_boxes_to_queue_with_center_move
+    resize_if_needed, normalize_and_dilate,
+    make_json_serializable
 )
 
 
@@ -817,8 +812,6 @@ f"Length: {ub['length']} px<br>"
 
     def clear_queue_server_list(self):
         self.queue_server_list.clear()
-
-from PyQt5.QtCore import QEvent
 
 class UpdateProgressEvent(QEvent):
     EVENT_TYPE = QEvent.Type(QEvent.User + 1)
