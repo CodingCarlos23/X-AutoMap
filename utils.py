@@ -1332,64 +1332,141 @@ def load_and_queue(json_path, ):
     # 6) Dispatch
     submit_and_export(**params)
 
+def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, dwell = 0.05,
+                        step_size = 500, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
+    
+
+    """ Usage <mosaic_overlap_scan([fs, xspress3, eiger2], dwell=0.01, plot_elem=['Au_L'], mll=True)"""
+
+    if dets is None:
+        dets = dets_fast
+
+    max_travel = 25
+
+    dsx_i = dsx.position
+    dsy_i = dsy.position
+
+    smarx_i = smarx.position
+    smary_i = smary.position
+
+    scan_dim = max_travel - round(max_travel*overlap_per*0.01)
+
+    x_tile = round(xlen/scan_dim)
+    y_tile = round(ylen/scan_dim)
+
+    xlen_updated = scan_dim*x_tile
+    ylen_updated = scan_dim*y_tile
+
+    #print(f"{xlen_updated = }, {ylen_updated=}")
 
 
-'''
+    X_position = np.linspace(0,xlen_updated-scan_dim,x_tile)
+    Y_position = np.linspace(0,ylen_updated-scan_dim,y_tile)
 
-In [7]: RM.status()
-Out[7]: 
-{'msg': 'RE Manager v0.0.21',
- 'items_in_queue': 0,
- 'items_in_history': 0,
- 'running_item_uid': 'ed947801-8463-4948-9f1e-6593eddd5045',
- 'manager_state': 'executing_queue',
- 'queue_stop_pending': False,
- 'queue_autostart_enabled': False,
- 'worker_environment_exists': True,
- 'worker_environment_state': 'executing_plan',
- 'worker_background_tasks': 0,
- 're_state': 'running',
- 'ip_kernel_state': 'busy',
- 'ip_kernel_captured': True,
- 'pause_pending': False,
- 'run_list_uid': '21bfb9cf-e6a2-4168-995f-4e772d88c6e5',
- 'plan_queue_uid': 'fbfac899-bbaf-422b-9a37-d3fc39515ade',
- 'plan_history_uid': 'd824d0d8-ac5a-4b72-a16c-46a28b8d7b6d',
- 'devices_existing_uid': 'ea9dff2e-f70d-4367-9c24-e4659d32da6c',
- 'plans_existing_uid': 'fcd143b9-4b51-41ef-9e6b-f6800c119956',
- 'devices_allowed_uid': '63cfd82b-98df-4eab-a10e-0b15dd6789c0',
- 'plans_allowed_uid': '73f190db-31b3-407c-917f-23fda16d4086',
- 'plan_queue_mode': {'loop': False, 'ignore_failures': False},
- 'task_results_uid': 'db51a825-2a36-4a7b-ae92-47f22b497703',
- 'lock_info_uid': '9a2348d0-a2e7-4155-a8d5-9fea5329f7e4',
- 'lock': {'environment': False, 'queue': False}}
+    X_position_abs = smarx.position*1000+(X_position)
+    Y_position_abs = smary.position*1000+(Y_position)
 
-In [8]: RM.status()
-Out[8]: 
-{'msg': 'RE Manager v0.0.21',
- 'items_in_queue': 0,
- 'items_in_history': 1,
- 'running_item_uid': None,
- 'manager_state': 'idle',
- 'queue_stop_pending': False,
- 'queue_autostart_enabled': False,
- 'worker_environment_exists': True,
- 'worker_environment_state': 'idle',
- 'worker_background_tasks': 0,
- 're_state': 'idle',
- 'ip_kernel_state': 'idle',
- 'ip_kernel_captured': False,
- 'pause_pending': False,
- 'run_list_uid': '24e164de-b085-4100-8e0c-351d469e1610',
- 'plan_queue_uid': '3d5711fc-6232-4ed4-a104-2c976a840f20',
- 'plan_history_uid': '53139750-0762-402c-a88c-e9e76de1d9e4',
- 'devices_existing_uid': 'ea9dff2e-f70d-4367-9c24-e4659d32da6c',
- 'plans_existing_uid': 'fcd143b9-4b51-41ef-9e6b-f6800c119956',
- 'devices_allowed_uid': '63cfd82b-98df-4eab-a10e-0b15dd6789c0',
- 'plans_allowed_uid': '73f190db-31b3-407c-917f-23fda16d4086',
- 'plan_queue_mode': {'loop': False, 'ignore_failures': False},
- 'task_results_uid': 'db51a825-2a36-4a7b-ae92-47f22b497703',
- 'lock_info_uid': '9a2348d0-a2e7-4155-a8d5-9fea5329f7e4',
- 'lock': {'environment': False, 'queue': False}}
+    #print(X_position_abs)
+    #print(Y_position_abs)
 
-'''
+
+    #print(X_position)
+    #print(Y_position)
+
+    print(f"{xlen_updated = }")
+    print(f"{ylen_updated = }")
+    print(f"# of x grids = {x_tile}")
+    print(f"# of y grids = {y_tile}")
+    print(f"individual grid size in um = {scan_dim} x {scan_dim}")
+
+    num_steps = round(max_travel*1000/step_size)
+
+    unit = "minutes"
+    fly_time = (num_steps**2)*dwell*2
+    num_flys= len(X_position)*len(Y_position)
+    total_time = (fly_time*num_flys)/60
+
+
+    if total_time>60:
+        total_time/=60
+        unit = "hours"
+
+    #print(f'total time = {total_time} {unit}; 10 seconds to quit')
+
+    ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
+
+    if ask == 'y':
+
+        #yield from bps.sleep(10)
+        first_sid = db[-1].start["scan_id"]+1
+
+        if mll:
+
+            yield from bps.movr(dsy, ylen_updated/-2)
+            yield from bps.movr(dsx, xlen_updated/-2)
+            X_position_abs = dsx.position+(X_position)
+            Y_position_abs = dsy.position+(Y_position)
+
+
+        else:
+            yield from bps.movr(smary, ylen_updated*-0.001/2)
+            yield from bps.movr(smarx, xlen_updated*-0.001/2)
+            X_position_abs = smarx.position+(X_position*0.001)
+            Y_position_abs = smary.position+(Y_position*0.001)
+
+            print(X_position_abs)
+            print(Y_position_abs)
+
+
+        for i in tqdm.tqdm(Y_position_abs):
+                for j in tqdm.tqdm(X_position_abs):
+                    print((i,j))
+                    #yield from check_for_beam_dump(threshold=5000)
+                    yield from bps.sleep(1) #cbm catchup time
+
+                    fly_dim = scan_dim/2
+
+                    if mll:
+
+                        print(i,j)
+
+                        yield from bps.mov(dsy, i)
+                        yield from bps.mov(dsx, j)
+                        # yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
+                        headless_send_queue_coarse_scan(beamline_params, initial_scan_path)
+
+                        yield from bps.sleep(3)
+                        yield from bps.mov(dssx,0,dssy,0)
+                        #insert_xrf_map_to_pdf(-1,plot_elem,'dsx')
+                        yield from bps.mov(dsx, dsx_i)
+                        yield from bps.mov(dsy,dsy_i)
+
+                    else:
+                        print(f"{fly_dim = }")
+                        yield from bps.mov(smary, i)
+                        yield from bps.mov(smarx, j)
+                        # yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
+                        headless_send_queue_coarse_scan(beamline_params, initial_scan_path)
+
+                        yield from bps.sleep(1)
+                        yield from bps.mov(zpssx,0,zpssy,0)
+
+                        #try:
+                            #insert_xrf_map_to_pdf(-1,plot_elem[0],'smarx')
+                        #except:
+                            #plt.close()
+                            #pass
+
+
+                        yield from bps.mov(smarx, smarx_i)
+                        yield from bps.mov(smary,smary_i)
+
+        save_page()
+
+        # plot_mosiac_overlap(grid_shape = (y_tile,x_tile),
+        #                     first_scan_num = int(first_sid),
+        #                     elem = plot_elem[0],
+        #                     show_scan_num = True)
+
+    else:
+        return
