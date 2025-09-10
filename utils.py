@@ -1132,7 +1132,7 @@ def load_and_queue(json_path, ):
 
 
 def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, dwell = 0.05,
-                        step_size = 500, plot_elem = ["Cr"],mll = False):
+                        step_size = 500, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
     
 
     """ Usage <mosaic_overlap_scan([fs, xspress3, eiger2], dwell=0.01, plot_elem=['Au_L'], mll=True)"""
@@ -1231,7 +1231,9 @@ def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, d
 
                         yield from bps.mov(dsy, i)
                         yield from bps.mov(dsx, j)
-                        yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
+                        # yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
+                        headless_send_queue_coarse_scan(beamline_params, initial_scan_path)
+
                         yield from bps.sleep(3)
                         yield from bps.mov(dssx,0,dssy,0)
                         #insert_xrf_map_to_pdf(-1,plot_elem,'dsx')
@@ -1242,7 +1244,9 @@ def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, d
                         print(f"{fly_dim = }")
                         yield from bps.mov(smary, i)
                         yield from bps.mov(smarx, j)
-                        yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
+                        # yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
+                        headless_send_queue_coarse_scan(beamline_params, initial_scan_path)
+
                         yield from bps.sleep(1)
                         yield from bps.mov(zpssx,0,zpssy,0)
 
@@ -1265,168 +1269,3 @@ def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, d
 
     else:
         return
-
-def grid_scan(dets=None, ylen=100, xlen=100, overlap_per=15, dwell=0.05,
-              step_size_coarse=500, step_size_fine=50, plot_elem=["Cr"], mll=False,
-              elem_list=[], min_thresh=150, min_area=10,
-              microns_per_pixel_x=1.0, microns_per_pixel_y=1.0,
-              true_origin_x=0.0, true_origin_y=0.0):
-    """
-    Template function for a grid scan that performs a coarse scan, finds features,
-    and then performs fine scans on those features at each point in a grid.
-
-    Usage: <grid_scan(dets=[fs, xspress3], ylen=200, xlen=200, overlap_per=20, dwell=0.02,
-                      step_size_coarse=400, step_size_fine=40, plot_elem=['Ca'],
-                      elem_list=['Ca', 'S', 'Fe'], min_thresh=160, min_area=5)> 
-    """
-    if dets is None:
-        dets = dets_fast
-
-    max_travel = 25
-
-    dsx_i = dsx.position
-    dsy_i = dsy.position
-    smarx_i = smarx.position
-    smary_i = smary.position
-
-    scan_dim = max_travel - round(max_travel * overlap_per * 0.01)
-    x_tile = round(xlen / scan_dim)
-    y_tile = round(ylen / scan_dim)
-    xlen_updated = scan_dim * x_tile
-    ylen_updated = scan_dim * y_tile
-
-    X_position = np.linspace(0, xlen_updated - scan_dim, x_tile)
-    Y_position = np.linspace(0, ylen_updated - scan_dim, y_tile)
-
-    if not mll:
-        X_position_abs = smarx.position * 1000 + (X_position)
-        Y_position_abs = smary.position * 1000 + (Y_position)
-    else:
-        X_position_abs = dsx.position + (X_position)
-        Y_position_abs = dsy.position + (Y_position)
-
-    print(f"Adjusted scan x-range: {xlen_updated} um, y-range: {ylen_updated} um")
-    print(f"# of x grids: {x_tile}, # of y grids: {y_tile}")
-    print(f"Individual grid size: {scan_dim} x {scan_dim} um")
-
-    # Basic time estimation
-    num_steps_coarse_per_tile = round(scan_dim * 1000 / step_size_coarse)
-    coarse_scan_time = (num_steps_coarse_per_tile**2) * dwell
-    total_coarse_time_min = (coarse_scan_time * x_tile * y_tile) / 60
-    unit = "minutes"
-    if total_coarse_time_min > 60:
-        total_coarse_time_min /= 60
-        unit = "hours"
-
-    ask = input(f"Estimated coarse scan time: {total_coarse_time_min:.2f} {unit} (fine scans will add more time).\n" 
-                f"Do you wish to continue? (y/n) ")
-
-    if ask.lower() == 'y':
-        if mll:
-            yield from bps.movr(dsy, ylen_updated / -2)
-            yield from bps.movr(dsx, xlen_updated / -2)
-            X_position_abs = dsx.position + (X_position)
-            Y_position_abs = dsy.position + (Y_position)
-        else:
-            yield from bps.movr(smary, ylen_updated * -0.001 / 2)
-            yield from bps.movr(smarx, xlen_updated * -0.001 / 2)
-            X_position_abs = smarx.position + (X_position * 0.001)
-            Y_position_abs = smary.position + (Y_position * 0.001)
-
-        for i in tqdm.tqdm(Y_position_abs, desc="Y Grid"):
-            for j in tqdm.tqdm(X_position_abs, desc="X Grid", leave=False):
-                print(f"\nMoving to grid point: Y={i:.3f}, X={j:.3f}")
-
-                # 1. Move to the center of the current grid tile
-                if mll:
-                    yield from bps.mov(dsy, i)
-                    yield from bps.mov(dsx, j)
-                    coarse_mot1, coarse_mot2 = dssx, dssy
-                    main_mot1, main_mot2 = dsx, dsy
-                else:
-                    yield from bps.mov(smary, i)
-                    yield from bps.mov(smarx, j)
-                    coarse_mot1, coarse_mot2 = zpssx, zpssy
-                    main_mot1, main_mot2 = smarx, smary
-
-                # 2. Perform a coarse (quick) scan
-                fly_dim_um = scan_dim / 2  # half-width of the scan in um
-                num_steps_coarse = round(scan_dim / step_size_coarse)
-                print(f"Starting coarse scan ({num_steps_coarse}x{num_steps_coarse} steps)...")
-                
-                fly_dim_mm = fly_dim_um / 1000.0
-                
-                coarse_uid = yield from fly2dpd(dets,
-                                                coarse_mot1, -fly_dim_mm, fly_dim_mm, num_steps_coarse,
-                                                coarse_mot2, -fly_dim_mm, fly_dim_mm, num_steps_coarse,
-                                                dwell)
-                
-                print("Coarse scan complete. Analyzing results...")
-                
-                # 3. Analyze the coarse scan to find features (blobs)
-                coarse_hdr = db[coarse_uid]
-                coarse_sid = coarse_hdr.start['scan_id']
-                out_dir = f"./grid_scan_output/tile_sid_{coarse_sid}"
-                os.makedirs(out_dir, exist_ok=True)
-
-                export_xrf_roi_data(coarse_sid, elem_list=elem_list, wd=out_dir)
-                tiff_paths = wait_for_element_tiffs(elem_list, out_dir)
-
-                COLOR_ORDER = ['red', 'blue', 'green', 'orange', 'purple', 'cyan', 'olive', 'yellow']
-                precomputed_blobs = {color: {} for color in COLOR_ORDER}
-                processed_elements = list(tiff_paths.keys())[:len(COLOR_ORDER)]
-
-                for idx, element in enumerate(processed_elements):
-                    color = COLOR_ORDER[idx]
-                    tiff_path = tiff_paths[element]
-                    try:
-                        tiff_img = tiff.imread(str(tiff_path)).astype(np.float32)
-                        norm, dilated = normalize_and_dilate(tiff_img)
-                        blobs = detect_blobs(dilated, norm, min_thresh, min_area, color, tiff_path.name)
-                        precomputed_blobs[color][(min_thresh, min_area)] = blobs
-                    except Exception as e:
-                        print(f"Could not process {tiff_path.name}: {e}")
-
-                if len(processed_elements) >= 2:
-                    unions = find_union_blobs(
-                        precomputed_blobs,
-                        microns_per_pixel_x, microns_per_pixel_y,
-                        true_origin_x, true_origin_y
-                    )
-                    print(f"Found {len(unions)} regions of interest for fine scanning.")
-
-                    # 4. Perform fine scans on each found feature
-                    for idx, union_info in unions.items():
-                        real_cx_um, real_cy_um = union_info['real_center_um']
-                        real_sx_um, real_sy_um = union_info['real_size_um']
-                        
-                        print(f"Starting fine scan #{idx} at (x={real_cx_um:.2f}, y={real_cy_um:.2f})...")
-
-                        yield from bps.mov(main_mot1, real_cx_um / 1000.0)
-                        yield from bps.mov(main_mot2, real_cy_um / 1000.0)
-
-                        num_steps_fine_x = int(real_sx_um / step_size_fine)
-                        num_steps_fine_y = int(real_sy_um / step_size_fine)
-                        fine_fly_dim_x_mm = (real_sx_um / 2) / 1000.0
-                        fine_fly_dim_y_mm = (real_sy_um / 2) / 1000.0
-
-                        yield from fly2dpd(dets,
-                                          coarse_mot1, -fine_fly_dim_x_mm, fine_fly_dim_x_mm, num_steps_fine_x,
-                                          coarse_mot2, -fine_fly_dim_y_mm, fine_fly_dim_y_mm, num_steps_fine_y,
-                                          dwell)
-                        print(f"Fine scan #{idx} complete.")
-
-        # 5. Return motors to their initial positions
-        yield from bps.mov(dsx, dsx_i)
-        yield from bps.mov(dsy, dsy_i)
-        yield from bps.mov(smarx, smarx_i)
-        yield from bps.mov(smary, smary_i)
-        print("\nGrid scan complete. All motors returned to initial positions.")
-
-    else:
-        print("Scan aborted by user.")
-        return
-
-
-
-

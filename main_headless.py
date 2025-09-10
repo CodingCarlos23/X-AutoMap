@@ -60,9 +60,14 @@ def run_headless_processing():
     state.element_colors = analysis_params.get("elem_list", [])
 
     # Perform coarse scan
-    print("\nStarting coarse scan...")
+    # print("\nStarting coarse scan...")
     initial_scan_path = watch_dir / "initial_scan.json"
-    headless_send_queue_coarse_scan(beamline_params, initial_scan_path)
+    # headless_send_queue_coarse_scan(beamline_params, initial_scan_path) #Where scan used to start here
+
+    #Grid Scan
+    print("\n Grid scan starts here")
+    mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, dwell = 0.05,
+                        step_size = 500, plot_elem = ["None"],mll = False, beamline_params=beamline_params, initial_scan_path=initial_scan_path)
 
 if __name__ == "__main__":
     run_headless_processing()

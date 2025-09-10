@@ -1,0 +1,79 @@
+{
+  "scan_id": 341431,
+  "start_doc": {
+    "time": 1747434095.7220116,
+    "uid": "1e6faba2-ceb9-4f29-9bf0-381cd05a1d07",
+    "scan_name": "top_p2",
+    "versions": {
+      "ophyd": "1.6.4",
+      "bluesky": "1.8.3"
+    },
+    "x_scale_factor": 0.9542,
+    "tomo_angle_offset": -0.2,
+    "sample": "NbPt",
+    "beamline_id": "HXN",
+    "PI": "Ajith",
+    "z_scale_factor": 1.0309,
+    "group": "",
+    "config": {},
+    "experimenters": "",
+    "scan_id": 341431,
+    "plan_type": "generator",
+    "plan_name": "subs_wrapper",
+    "scan": {
+      "type": "2D_FLY_PANDA",
+      "scan_input": [
+        -5.70096,
+        4.29904,
+        200.0,
+        -6.00108,
+        3.99892,
+        200.0
+      ],
+      "sample_name": "",
+      "detectors": [
+        "fs",
+        "eiger2",
+        "xspress3",
+        "panda1",
+        "sclr1"
+      ],
+      "detector_distance": 2.05,
+      "dwell": 0.04999999999999999,
+      "fast_axis": {
+        "motor_name": "dssx",
+        "units": "um"
+      },
+      "slow_axis": {
+        "motor_name": "dssy",
+        "units": "um"
+      },
+      "shape": [
+        200,
+        200
+      ]
+    },
+    "motors": [
+      "dssx",
+      "dssy"
+    ],
+    "motor1": "dssx",
+    "motor2": "dssy",
+    "shape": [
+      200,
+      200
+    ],
+    "fly_type": "grid"
+  },
+  "roi_positions": {
+    "dssx": -5.71018,
+    "dssy": -6.000750000000001,
+    "dssz": 0.00125,
+    "dsx": -1871.4280000000008,
+    "dsy": -4727.437999999999,
+    "dsz": 381.08000000000015,
+    "sbz": 1.360000000000582,
+    "dsth": 5.499966999999998
+  },
+  "step_size": 0.05
+}
