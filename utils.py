@@ -51,7 +51,7 @@ def save_each_blob_as_individual_scan(json_safe_data, output_dir="scans"):
         with open(file_path, "w") as f:
             json.dump(scan_data, f, indent=4)
 
-def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path):
+def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path, real_test):
     """
     Performs coarse scan using only parameters from beamline_params.
     The output directory path is constructed and can be used later.
@@ -77,9 +77,9 @@ def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path):
     
     roi = {x_motor: cx, y_motor: cy}
 
-    load_and_queue(coarse_scan_path)
+    load_and_queue(coarse_scan_path, real_test)
 
-def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
+def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real_test):
     """
     Performs fine scan for each blob in the JSON file
     Reads all JSON files in a directory. Each file should contain a single key 
@@ -132,22 +132,24 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
 
-            RM.item_add(BPlan(
-                "recover_pos_and_scan", #written
-                label, #from folder of jsons
-                roi, #calculated here
-                dets, #from beamline_params
-                x_motor, #from beamline_params
-                x_start, #calculated here
-                x_end, #calculated here
-                num_steps_x, #calculated here
-                y_motor, #from beamline_params
-                y_start, #calculated here
-                y_end, #calculate d here
-                num_steps_y, #calculated here
-                exp_t, #from beamline_params
-                step_size #from json
-            ))
+            if real_test == 1:
+                RM.item_add(BPlan(
+                    "recover_pos_and_scan", #written
+                    label, #from folder of jsons
+                    roi, #calculated here
+                    dets, #from beamline_params
+                    x_motor, #from beamline_params
+                    x_start, #calculated here
+                    x_end, #calculated here
+                    num_steps_x, #calculated here
+                    y_motor, #from beamline_params
+                    y_start, #calculated here
+                    y_end, #calculate d here
+                    num_steps_y, #calculated here
+                    exp_t, #from beamline_params
+                    step_size, #from json
+                    real_test
+                ))
 
             if scan_ID is not None:
                 roi = scan_ID
@@ -594,7 +596,11 @@ def _get_flyscan_dimensions(hdr):
     else:
         raise ValueError("Unknown scan type for _get_flyscan_dimensions")
 
-def export_xrf_roi_data(scan_id, norm = 'sclr1_ch4', elem_list = [], wd = '.'):
+def export_xrf_roi_data(scan_id, norm = 'sclr1_ch4', elem_list = [], wd = '.', real_test=0):
+
+    if real_test == 0:
+        print("[EXPORT] Skipping XRF ROI data export in test mode.")
+        return
 
     hdr = db[int(scan_id)]
     scan_id = hdr.start["scan_id"]
@@ -617,7 +623,7 @@ def export_xrf_roi_data(scan_id, norm = 'sclr1_ch4', elem_list = [], wd = '.'):
         tiff.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
 
 
-def export_scan_params(sid=-1, zp_flag=True, save_to=None):
+def export_scan_params(sid=-1, zp_flag=True, save_to=None, real_test=0):
     """
     Fetch scan parameters, ROI positions, step size, and the full start_doc
     for scan `sid`.  Optionally write them out as JSON.
@@ -628,6 +634,9 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None):
       - roi_positions
       - step_size (computed from scan_input for 2D_FLY_PANDA)
     """
+    if real_test == 0:
+        print("[EXPORT] Skipping scan params export in test mode.")
+        return
     # 1) Pull the header
     hdr = db[int(sid)]
     start_doc = dict(hdr.start)  # cast to plain dict
@@ -781,7 +790,8 @@ def send_fly2d_to_queue(label,
                         elem_list=None,
                         export_norm='sclr1_ch4',
                         data_wd='.',
-                        pos_save_to=None):
+                        pos_save_to=None,
+                        real_test=0):
     # det_names = [d.name for d in eval(dets)]
     det_names = ['fs', 'eiger2', 'xspress3']
 
@@ -792,22 +802,24 @@ def send_fly2d_to_queue(label,
         roi_json = roi_positions
 
     print("Coarse scan")
-    RM.item_execute(BPlan("fly2d_qserver_scan_export",
-                      label,
-                      det_names,
-                      mot1, mot1_s, mot1_e, mot1_n,
-                      mot2, mot2_s, mot2_e, mot2_n,
-                      exp_t,
-                      roi_json,
-                      scan_id or "",
-                      zp_move_flag,
-                      smar_move_flag,
-                      ic1_count,
-                      json.dumps(elem_list or []),
-                      export_norm,
-                      data_wd,
-                      pos_save_to or ""
-                      ))
+    if real_test == 1:
+        RM.item_execute(BPlan("fly2d_qserver_scan_export",
+                          label,
+                          det_names,
+                          mot1, mot1_s, mot1_e, mot1_n,
+                          mot2, mot2_s, mot2_e, mot2_n,
+                          exp_t,
+                          roi_json,
+                          scan_id or "",
+                          zp_move_flag,
+                          smar_move_flag,
+                          ic1_count,
+                          json.dumps(elem_list or []),
+                          export_norm,
+                          data_wd,
+                          pos_save_to or "",
+                          real_test
+                          ))
     print("Coarse scan done")
 
 def wait_for_queue_done(poll_interval=2.0):
@@ -834,7 +846,7 @@ def submit_and_export(**params):
     label = params.get('label', '')
     print(f"[SUBMIT] queueing scan '{label}' …")
 
-    print(f"{param = }")
+    print(f"{params = }")
 
     valid_keys = inspect.signature(send_fly2d_to_queue).parameters.keys()
     clean_params = {k: v for k, v in params.items() if k in valid_keys}
@@ -844,20 +856,22 @@ def submit_and_export(**params):
     send_fly2d_to_queue(**clean_params)
 
     # 2) wait
-    print("[WAIT] waiting for scan to finish…")
-    while True:
-        st = RM.status()
-        if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-            break
-        time.sleep(1.0)
-    print("[WAIT] scan complete.")
+    if params.get('real_test', 0) == 1:
+        print("[WAIT] waiting for scan to finish…")
+        while True:
+            st = RM.status()
+            if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
+                break
+            time.sleep(1.0)
+        print("[WAIT] scan complete.")
 
     # 3) get last scan_id and prepare output folder
-    hdr = db[-1]
-    last_id = hdr.start['scan_id']
     data_wd = params.get('data_wd', '.')
-
-    last_id = 341431 #THIS IS TEMP REMOVE WHEN RUNNING 
+    if params.get('real_test', 0) == 1:
+        hdr = db[-1]
+        last_id = hdr.start['scan_id']
+    else:
+        last_id = 341431 # Use a dummy scan ID for testing 
 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
@@ -868,14 +882,16 @@ def submit_and_export(**params):
         last_id,
         norm=params.get('export_norm', 'sclr1_ch4'),
         elem_list=params.get('elem_list', []),
-        wd=out_dir
+        wd=out_dir,
+        real_test=params.get('real_test', 0)
     )
 
     # 5) export scan parameters JSON
     export_scan_params(
         sid=last_id,
         zp_flag=bool(params.get('zp_move_flag', True)),
-        save_to=out_dir
+        save_to=out_dir,
+        real_test=params.get('real_test', 0)
     )
 
     elem_list = params.get("elem_list", "")
@@ -958,7 +974,7 @@ def submit_and_export(**params):
 
 
         print("Performin fine scan now")
-        headless_send_queue_fine_scan(out_dir, params, last_id)
+        headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
 
     if tiff_paths:
         create_rgb_tiff(tiff_paths, out_dir, elem_list)
@@ -968,7 +984,7 @@ def submit_and_export(**params):
     print("[DONE] all exports complete.")
 
 
-def load_and_queue(json_path, ):
+def load_and_queue(json_path, real_test):
     """
     Load scan parameters from JSON, compute necessary fields,
     and either enqueue only or enqueue+export based on a flag.
@@ -1004,6 +1020,7 @@ def load_and_queue(json_path, ):
     #     params['dets'] = repr(params['dets'])
 
     # 6) Dispatch
+    params['real_test'] = real_test
     submit_and_export(**params)
 
 

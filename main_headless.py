@@ -63,7 +63,10 @@ def run_headless_processing():
     initial_scan_path = watch_dir / "initial_scan.json"
     # Perform coarse scan
     # print("\nStarting coarse scan...")
-    headless_send_queue_coarse_scan(beamline_params, initial_scan_path) #Where scan used to start here
+    #1 is real run time, 0 is testing
+    headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 0) #Where scan used to start here
+
+    #Will need to modify gui for these changes of test vs real params as well 
 
     #Grid Scan
     print("\n Grid scan starts here")
