@@ -30,64 +30,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect, QTimer
 
-
-def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="data/gui_scans/queued_regions.json"):
-    """
-    For each region in the JSON file:
-    - Move stage to real_center_um
-    - Perform fly2d scan centered on that position
-    """
-    # Ensure the directory exists
-    os.makedirs(os.path.dirname(file_save_path), exist_ok=True)
-
-    with open(json_file_path, "r") as f:
-        boxes = json.load(f)
-
-    queued_data = {}
-
-    for label, info in boxes.items():
-        cx, cy = info["real_center_um"]         # center in um
-        sx, sy = info["real_size_um"]           # size in um
- 
-        # Define relative scan range around center
- 
-        x_start = cx - sx / 2
-        x_end = cx + sx / 2
-        y_start = cy - sy / 2
-        y_end = cy + sy / 2
-
-        # # Detector names
-        # det_names = [d.name for d in eval(dets)]
- 
-        # # Create ROI dictionary to move motors first
-        # roi = {x_motor: cx, y_motor: cy}
-
-        # RM.item_add(BPlan(
-        #     "recover_pos_and_scan",
-        #     label,
-        #     roi,
-        #     det_names,
-        #     x_motor,
-        #     x_start,
-        #     x_end,
-        #     sx,
-        #     y_motor,
-        #     y_start,
-        #     y_end,
-        #     sy,
-        #     exp_t
-        # ))
-
-        # print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
-        # Add to export dictionary
-        queued_data[label] = {
-            "center_um": [round(cx, 2), round(cy, 2)],
-            "size_um": [round(sx, 2), round(sy, 2)],
-        }
-    # Save metadata to a JSON file
-    with open(file_save_path, "w") as f_out:
-        json.dump(queued_data, f_out, indent=4)
-
 def save_each_blob_as_individual_scan(json_safe_data, output_dir="scans"):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
@@ -115,7 +57,7 @@ def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path):
     The output directory path is constructed and can be used later.
     No JSON files are read in this function.
     """ 
-    dets = beamline_params.get("det_name", "dets_fs")
+    dets = beamline_params.get("det_name", "dets_fast")
     x_motor = beamline_params.get("mot1", "zpssx")
     y_motor = beamline_params.get("mot2", "zpssy")
 
@@ -135,37 +77,7 @@ def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path):
     
     roi = {x_motor: cx, y_motor: cy}
 
-    # RM.item_add(BPlan(
-    #     "recover_pos_and_scan",
-    #     "coarse_scan", # or another label
-    #     roi,
-    #     dets,
-    #     x_motor,
-    #     x_start,
-    #     x_end,
-    #     mot1_n,
-    #     y_motor,
-    #     y_start,
-    #     y_end,
-    #     mot2_n,
-    #     exp_time
-    # ))
     load_and_queue(coarse_scan_path)
-    #The function ^ would generate the tiff files to headless_scan
-
-    # print("Coarse Scan to Queue Server")
-    # print("\n=== Scan Parameters ===")
-    # print("recover_pos_and_scan")
-    # print(f"ROI (region of interest): {roi}")
-    # print(f"Detector name (dets): {dets}")
-    # print(f"X motor: {x_motor} (mot1), mot1_n: {mot1_n}")
-    # print(f"Y motor: {y_motor} (mot2), mot2_n: {mot2_n}")
-    # print(f"Exposure time (exp_t): {exp_time}")
-    # print(f"Step size: {step_size}")
-    # print("--- Scan Ranges ---")
-    # print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
-    # print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
-    # print("------------------------")
 
 def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
     """
@@ -193,12 +105,10 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
             continue
         if filename in ("unions_output.json", "union_blobs.json"):
             continue
-        if pattern.match(filename):   # ignore scan_##_params.json
+        if pattern.match(filename):
             continue
 
         json_path = os.path.join(directory_path, filename)
-        print(f"\n=== Now parsing: {filename} ===")
-
         with open(json_path, "r") as f:
             data = json.load(f)
 
@@ -222,44 +132,27 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID):
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
 
-            # RM.item_add(BPlan(
-            #     "recover_pos_and_scan", #written
-            #     label, #from folder of jsons
-            #     roi, #calculated here
-            #     dets, #from beamline_params
-            #     x_motor, #from beamline_params
-            #     x_start, #calculated here
-            #     x_end, #calculated here
-            #     num_steps_x, #calculated here
-            #     y_motor, #from beamline_params
-            #     y_start, #calculated here
-            #     y_end, #calculate d here
-            #     num_steps_y, #calculated here
-            #     exp_t, #from beamline_params
-            #     step_size #from json
-            # ))
+            RM.item_add(BPlan(
+                "recover_pos_and_scan", #written
+                label, #from folder of jsons
+                roi, #calculated here
+                dets, #from beamline_params
+                x_motor, #from beamline_params
+                x_start, #calculated here
+                x_end, #calculated here
+                num_steps_x, #calculated here
+                y_motor, #from beamline_params
+                y_start, #calculated here
+                y_end, #calculate d here
+                num_steps_y, #calculated here
+                exp_t, #from beamline_params
+                step_size #from json
+            ))
 
             if scan_ID is not None:
                 roi = scan_ID
             else:
                 roi = roi
-
-            # RM.item_add(BPlan(
-            #     "recover_pos_from_SID_and_scan", #written
-            #     label, #from folder of jsons
-            #     roi, #calculated here
-            #     dets, #from beamline_params
-            #     x_motor, #from beamline_params
-            #     x_start, #calculated here
-            #     x_end, #calculated here
-            #     num_steps_x, #calculated here
-            #     y_motor, #from beamline_params
-            #     y_start, #calculated here
-            #     y_end, #calculate d here
-            #     num_steps_y, #calculated here
-            #     exp_t, #from beamline_params
-            #     step_size #from json
-            # ))
 
             print("Fine Scan to Queue Server")
             print("\n=== Scan Parameters for JSON: {} ===".format(filename))
@@ -470,12 +363,6 @@ def first_scan_detect_blobs():
         except Exception as e:
             print(f"❌ Error processing {tiff_name}: {e}")
 
-    # # --- Done ---
-    # print("\n✅ Precomputed blobs:")
-    # for color, data in precomputed_blobs.items():
-    #     if data:
-    #         print(f"{color}: {data}")
-
     return precomputed_blobs
 
 def structure_blob_tooltips(json_path):
@@ -533,8 +420,6 @@ def structure_blob_tooltips(json_path):
     # Overwrite original file with structured data
     with open(json_path, "w") as f:
         json.dump(structured_data, f, indent=4)
-
-    # print(f"✅ Structured tooltip data saved to {json_path}")
 
 def resize_if_needed(img, name, target_shape):
         if img.shape != target_shape:
@@ -711,25 +596,25 @@ def _get_flyscan_dimensions(hdr):
 
 def export_xrf_roi_data(scan_id, norm = 'sclr1_ch4', elem_list = [], wd = '.'):
 
-    # hdr = db[int(scan_id)]
-    # scan_id = hdr.start["scan_id"]
+    hdr = db[int(scan_id)]
+    scan_id = hdr.start["scan_id"]
    
     channels = [1, 2, 3]
-    #print(f"{elem_list = }")
+    print(f"{elem_list = }")
     print(f"[DATA] fetching XRF ROIs")
-    # scan_dim = _get_flyscan_dimensions(hdr)
+    scan_dim = _get_flyscan_dimensions(hdr)
     print(f"[DATA] fetching scalar values")
 
-    # scalar = np.array(list(hdr.data(norm))).squeeze()
+    scalar = np.array(list(hdr.data(norm))).squeeze()
     print(f"[DATA] fetching scalar {norm} values done")
 
-    # for elem in sorted(elem_list):
-        # roi_keys = [f'Det{chan}_{elem}' for chan in channels]
-        # spectrum = np.sum([np.array(list(hdr.data(roi)), dtype=np.float32).squeeze() for roi in roi_keys], axis=0)
-        # if norm !=None:
-            # spectrum = spectrum/scalar
-        # xrf_img = spectrum.reshape(scan_dim)
-        # tiff.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
+    for elem in sorted(elem_list):
+        roi_keys = [f'Det{chan}_{elem}' for chan in channels]
+        spectrum = np.sum([np.array(list(hdr.data(roi)), dtype=np.float32).squeeze() for roi in roi_keys], axis=0)
+        if norm !=None:
+            spectrum = spectrum/scalar
+        xrf_img = spectrum.reshape(scan_dim)
+        tiff.imwrite(os.path.join(wd,f"scan_{scan_id}_{elem}.tiff"), xrf_img)
 
 
 def export_scan_params(sid=-1, zp_flag=True, save_to=None):
@@ -744,65 +629,65 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None):
       - step_size (computed from scan_input for 2D_FLY_PANDA)
     """
     # 1) Pull the header
-    # hdr = db[int(sid)]
-    # start_doc = dict(hdr.start)  # cast to plain dict
+    hdr = db[int(sid)]
+    start_doc = dict(hdr.start)  # cast to plain dict
 
     # 2) Grab the baseline table and build the ROI dict
-    # tbl = db.get_table(hdr, stream_name='baseline')
-    # row = tbl.iloc[0]
-    # if zp_flag:
-    #     roi = {
-    #         "zpssx":    float(row["zpssx"]),
-    #         "zpssy":    float(row["zpssy"]),
-    #         "zpssz":    float(row["zpssz"]),
-    #         "smarx":    float(row["smarx"]),
-    #         "smary":    float(row["smary"]),
-    #         "smarz":    float(row["smarz"]),
-    #         "zp.zpz1":  float(row["zpz1"]),
-    #         "zpsth":    float(row["zpsth"]),
-    #         "zps.zpsx": float(row["zpsx"]),
-    #         "zps.zpsz": float(row["zpsz"]),
-    #     }
-    # else:
-    #     roi = {
-    #         "dssx":  float(row["dssx"]),
-    #         "dssy":  float(row["dssy"]),
-    #         "dssz":  float(row["dssz"]),
-    #         "dsx":   float(row["dsx"]),
-    #         "dsy":   float(row["dsy"]),
-    #         "dsz":   float(row["dsz"]),
-    #         "sbz":   float(row["sbz"]),
-    #         "dsth":  float(row["dsth"]),
-    #     }
+    tbl = db.get_table(hdr, stream_name='baseline')
+    row = tbl.iloc[0]
+    if zp_flag:
+        roi = {
+            "zpssx":    float(row["zpssx"]),
+            "zpssy":    float(row["zpssy"]),
+            "zpssz":    float(row["zpssz"]),
+            "smarx":    float(row["smarx"]),
+            "smary":    float(row["smary"]),
+            "smarz":    float(row["smarz"]),
+            "zp.zpz1":  float(row["zpz1"]),
+            "zpsth":    float(row["zpsth"]),
+            "zps.zpsx": float(row["zpsx"]),
+            "zps.zpsz": float(row["zpsz"]),
+        }
+    else:
+        roi = {
+            "dssx":  float(row["dssx"]),
+            "dssy":  float(row["dssy"]),
+            "dssz":  float(row["dssz"]),
+            "dsx":   float(row["dsx"]),
+            "dsy":   float(row["dsy"]),
+            "dsz":   float(row["dsz"]),
+            "sbz":   float(row["sbz"]),
+            "dsth":  float(row["dsth"]),
+        }
 
-    # # 3) Compute unified step_size from scan_input
-    # scan_info = start_doc.get("scan", {})
-    # si = scan_info.get("scan_input", [])
-    # if scan_info.get("type") == "2D_FLY_PANDA" and len(si) >= 3:
-    #     fast_start, fast_end, fast_N = si[0], si[1], si[2]
-    #     step_size = abs(fast_end - fast_start) / fast_N
-    # else:
-        # raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
+    # 3) Compute unified step_size from scan_input
+    scan_info = start_doc.get("scan", {})
+    si = scan_info.get("scan_input", [])
+    if scan_info.get("type") == "2D_FLY_PANDA" and len(si) >= 3:
+        fast_start, fast_end, fast_N = si[0], si[1], si[2]
+        step_size = abs(fast_end - fast_start) / fast_N
+    else:
+        raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
 
     # 4) Assemble the result dict
-    # result = {
-    #     "scan_id":       int(sid),
-    #     "start_doc":     start_doc,
-    #     "roi_positions": roi,
-    #     "step_size":     float(step_size),
-    # }
+    result = {
+        "scan_id":       int(sid),
+        "start_doc":     start_doc,
+        "roi_positions": roi,
+        "step_size":     float(step_size),
+    }
 
-    # # 5) Optionally write out JSON
-    # if save_to:
-    #     if os.path.isdir(save_to):
-    #         filename = os.path.join(save_to, f"scan_{sid}_params.json")
-    #     else:
-    #         filename = save_to if save_to.lower().endswith(".json") else save_to + ".json"
-    #     os.makedirs(os.path.dirname(filename), exist_ok=True)
-    #     with open(filename, "w") as f:
-    #         json.dump(result, f, indent=2)
+    # 5) Optionally write out JSON
+    if save_to:
+        if os.path.isdir(save_to):
+            filename = os.path.join(save_to, f"scan_{sid}_params.json")
+        else:
+            filename = save_to if save_to.lower().endswith(".json") else save_to + ".json"
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, "w") as f:
+            json.dump(result, f, indent=2)
 
-    # return result
+    return result
 
 def fly2d_qserver_scan_export(label,
                            dets,
@@ -898,29 +783,31 @@ def send_fly2d_to_queue(label,
                         data_wd='.',
                         pos_save_to=None):
     # det_names = [d.name for d in eval(dets)]
+    det_names = ['fs', 'eiger2', 'xspress3']
+
     roi_json = ""
-    # if isinstance(roi_positions, dict):
-    #     roi_json = json.dumps(roi_positions)
-    # elif isinstance(roi_positions, str):
-    #     roi_json = roi_positions
+    if isinstance(roi_positions, dict):
+        roi_json = json.dumps(roi_positions)
+    elif isinstance(roi_positions, str):
+        roi_json = roi_positions
 
     print("Coarse scan")
-    # RM.item_execute(BPlan("fly2d_qserver_scan_export",
-    #                   label,
-    #                   det_names,
-    #                   mot1, mot1_s, mot1_e, mot1_n,
-    #                   mot2, mot2_s, mot2_e, mot2_n,
-    #                   exp_t,
-    #                   roi_json,
-    #                   scan_id or "",
-    #                   zp_move_flag,
-    #                   smar_move_flag,
-    #                   ic1_count,
-    #                   json.dumps(elem_list or []),
-    #                   export_norm,
-    #                   data_wd,
-    #                   pos_save_to or ""
-    #                   ))
+    RM.item_execute(BPlan("fly2d_qserver_scan_export",
+                      label,
+                      det_names,
+                      mot1, mot1_s, mot1_e, mot1_n,
+                      mot2, mot2_s, mot2_e, mot2_n,
+                      exp_t,
+                      roi_json,
+                      scan_id or "",
+                      zp_move_flag,
+                      smar_move_flag,
+                      ic1_count,
+                      json.dumps(elem_list or []),
+                      export_norm,
+                      data_wd,
+                      pos_save_to or ""
+                      ))
     print("Coarse scan done")
 
 def wait_for_queue_done(poll_interval=2.0):
@@ -947,24 +834,31 @@ def submit_and_export(**params):
     label = params.get('label', '')
     print(f"[SUBMIT] queueing scan '{label}' …")
 
+    print(f"{param = }")
+
     valid_keys = inspect.signature(send_fly2d_to_queue).parameters.keys()
     clean_params = {k: v for k, v in params.items() if k in valid_keys}
+    print(f" check 1")
+    print(f" {clean_params = }")
+
     send_fly2d_to_queue(**clean_params)
 
     # 2) wait
     print("[WAIT] waiting for scan to finish…")
-    # while True:
-    #     st = RM.status()
-    #     if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-    #         break
-    #     time.sleep(1.0)
+    while True:
+        st = RM.status()
+        if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
+            break
+        time.sleep(1.0)
     print("[WAIT] scan complete.")
 
     # 3) get last scan_id and prepare output folder
-    # hdr = db[-1]
-    # last_id = hdr.start['scan_id']
+    hdr = db[-1]
+    last_id = hdr.start['scan_id']
     data_wd = params.get('data_wd', '.')
-    last_id = 1 #THIS IS TEMP REMOVE WHEN RUNNING 
+
+    last_id = 341431 #THIS IS TEMP REMOVE WHEN RUNNING 
+
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"[EXPORT] saving all outputs to {out_dir}")
@@ -986,8 +880,6 @@ def submit_and_export(**params):
 
     elem_list = params.get("elem_list", "")
     tiff_paths = wait_for_element_tiffs(elem_list, out_dir)
-
-    
 
     COLOR_ORDER = [
     'red', 'blue', 'green', 'orange', 'purple', 'cyan', 'olive', 'yellow'
@@ -1054,19 +946,6 @@ def submit_and_export(**params):
 
             formatted_unions[box_name] = formatted
 
-            # # Print each formatted union box
-            # print(f"\n{box_name}")
-            # print(f"  Text:               {formatted['text']}")
-            # print(f"  Image Center:       {formatted['image_center']}")
-            # print(f"  Image Length:       {formatted['image_length']}")
-            # print(f"  Image Area (px²):   {formatted['image_area_px²']}")
-            # print(f"  Real Center (µm):   {formatted['real_center_um']}")
-            # print(f"  Real Size (µm):     {formatted['real_size_um']}")
-            # print(f"  Real Area (µm²):    {formatted['real_area_um²']}")
-            # print(f"  Real Top Left (µm): {formatted['real_top_left_um']}")
-            # print(f"  Real Bottom Right:  {formatted['real_bottom_right_um']}")
-            # print("-" * 50)
-
         # Save to file
         out_dir_p = Path(out_dir)  # Convert string to Path object
         output_path = out_dir_p / "unions_output.json"#"data/headless_scan/unions_output.json"
@@ -1101,7 +980,7 @@ def load_and_queue(json_path, ):
         params = json.load(f)
 
     # 2) Extract blocking flag
-    block_and_export = params.pop('block_and_export', True)
+    # block_and_export = params.pop('block_and_export', True)
 
     # 3) Load ROI from separate file if requested
     roi_file = params.pop('roi_positions_file', None)
@@ -1121,14 +1000,12 @@ def load_and_queue(json_path, ):
         params['mot2_n'] = int(abs(params['mot2_e'] - params['mot2_s']) / step)
 
     # 5) Ensure dets is a string literal for eval()
-    if isinstance(params.get('dets'), list):
-        params['dets'] = repr(params['dets'])
+    # if isinstance(params.get('dets'), list):
+    #     params['dets'] = repr(params['dets'])
 
     # 6) Dispatch
-    if block_and_export:
-        submit_and_export(**params)
-    else:
-        send_fly2d_to_queue(**params)
+    submit_and_export(**params)
+
 
 
 def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, dwell = 0.05,
@@ -1189,8 +1066,6 @@ def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, d
     if total_time>60:
         total_time/=60
         unit = "hours"
-
-    #print(f'total time = {total_time} {unit}; 10 seconds to quit')
 
     ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
 
