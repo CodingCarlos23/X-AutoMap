@@ -140,6 +140,8 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
 
+            edit the RM order this still needs to be fixed to the correct #s 
+
             if real_test == 1:
                 RM.item_add(BPlan(
                     "recover_pos_and_scan", #written
@@ -155,31 +157,35 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
                     y_end, #calculate d here
                     num_steps_y, #calculated here
                     exp_t, #from beamline_params
-                    step_size, #from json
-                    real_test
+                    step_size #from json
                 ))
+
+            print(f"prev ROI: {roi}")
+            print()
 
             if scan_ID is not None:
                 roi = scan_ID
             else:
                 roi = roi
 
-            print("Fine Scan to Queue Server")
-            print("\n=== Scan Parameters for JSON: {} ===".format(filename))
-            print("recover_pos_and_scan")
-            print(f"Label: {label}")
-            print(f"ROI (region of interest): {roi}")
-            print(f"Detector name (dets): {dets}")
-            print(f"X motor: {x_motor} (mot1), mot1_n: {num_steps_x}")
-            print(f"Y motor: {y_motor} (mot2), mot2_n: {num_steps_y}")
-            print(f"Exposure time (exp_t): {exp_t}")
-            print(f"Step size: {step_size}")
-            print("--- Scan Ranges ---")
-            print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
-            print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
+            print(f"Fine Scan to Queue server {filename}")
+            print("BPlan: recover_pos_and_scan")
+            print(f"label: {label}")
+            print(f"roi: {roi}")
+            print(f"dets: {dets}")
+            print(f"x_motor: {x_motor}")
+            print(f"x_start: {x_start}")
+            print(f"x_end: {x_end}")
+            print(f"num_steps_x: {num_steps_x}")
+            print(f"y_motor: {y_motor}")
+            print(f"y_start: {y_start}")
+            print(f"y_end: {y_end}")
+            print(f"num_steps_y: {num_steps_y}")
+            print(f"exp_t: {exp_t}")
+            print(f"step_size: {step_size}")
             print("------------------------\n")
 
-        print(f"Queued scan(s) from JSON: {filename}") 
+        print(f"Scan from {filename} completed") 
         print()
     print("Fine scan is done")
 
