@@ -16,9 +16,17 @@ import cv2
 import numpy as np
 import tifffile as tiff
 
-# from bluesky_queueserver_api import BPlan
-# from bluesky_queueserver_api.zmq import REManagerAPI
-# RM = REManagerAPI()
+# make if else for rea_state
+try:
+    from bluesky_queueserver_api import BPlan
+    from bluesky_queueserver_api.zmq import REManagerAPI
+    RM = REManagerAPI()
+except ImportError:
+    BPlan = None
+    REManagerAPI = None
+    RM = None
+    print("Warning: bluesky_queueserver_api not found. Bluesky-related functionality will be disabled.")
+#  add the db into this here 
 
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
@@ -817,8 +825,8 @@ def send_fly2d_to_queue(label,
                           json.dumps(elem_list or []),
                           export_norm,
                           data_wd,
-                          pos_save_to or "",
-                          real_test
+                          pos_save_to or ""#,
+                        #   real_test
                           ))
     print("Coarse scan done")
 
@@ -871,11 +879,13 @@ def submit_and_export(**params):
         hdr = db[-1]
         last_id = hdr.start['scan_id']
     else:
-        last_id = 341431 # Use a dummy scan ID for testing 
+        last_id = 365896 # Use a dummy scan ID for testing 
 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"[EXPORT] saving all outputs to {out_dir}")
+
+    print(f"ID being used {last_id}")
 
     # 4) export XRF TIFFs
     export_xrf_roi_data(
@@ -973,7 +983,7 @@ def submit_and_export(**params):
         save_each_blob_as_individual_scan(formatted_unions, out_dir)
 
 
-        print("Performin fine scan now")
+        print("Perform fine scan now")
         headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
 
     if tiff_paths:
