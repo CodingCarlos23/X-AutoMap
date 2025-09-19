@@ -911,6 +911,13 @@ def submit_and_export(**params):
             params_data = json.load(f)
             step_size = params_data.get('step_size')
             print(f"Step size from params file: {step_size}")
+            # Get scan_input and extract x_start and y_start
+            scan_input = params_data.get('start_doc', {}).get('scan', {}).get('scan_input', [])
+            if len(scan_input) >= 4:
+                x_start = scan_input[0]
+                y_start = scan_input[3]
+                print(f"x_start from params file: {x_start}")
+                print(f"y_start from params file: {y_start}")
 
     elem_list = params.get("elem_list", "")
     tiff_paths = wait_for_element_tiffs(elem_list, out_dir)
@@ -925,8 +932,8 @@ def submit_and_export(**params):
     min_area = params.get("min_threshold_area", "")
     microns_per_pixel_x = step_size#params.get("microns_per_pixel_x", "")
     microns_per_pixel_y = step_size#params.get("microns_per_pixel_y", "")
-    true_origin_x = params.get("true_origin_x", "")
-    true_origin_y = params.get("true_origin_y", "")
+    true_origin_x = x_start#params.get("true_origin_x", "")
+    true_origin_y = y_start#params.get("true_origin_y", "")
 
     max_tiffs = min(len(tiff_paths), 8)
     processed_elements = list(tiff_paths.keys())[:max_tiffs]
