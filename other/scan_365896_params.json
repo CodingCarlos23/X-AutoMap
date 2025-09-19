@@ -1,0 +1,81 @@
+{
+  "scan_id": 365896,
+  "start_doc": {
+    "time": 1758004510.8206,
+    "uid": "e58f9735-92c6-4dd9-a70b-798dffd3f3d7",
+    "beamline_id": "HXN",
+    "scan_id": 365896,
+    "sample": "NaFeMnNi_111",
+    "x_scale_factor": 0.9542,
+    "versions": {
+      "ophyd": "1.10.5",
+      "bluesky": "1.14.4",
+      "ophyd_async": "0.10.0a2"
+    },
+    "z_scale_factor": 1.0309,
+    "PI": "TongchaoLiu",
+    "experimenters": "MY,XH,TM,ZG",
+    "config": {},
+    "group": "",
+    "scan_name": "NaFeMnNi_111_1",
+    "tiled_access_tags": [
+      "hxn_beamline"
+    ],
+    "plan_type": "generator",
+    "plan_name": "fly2dpd",
+    "scan": {
+      "type": "2D_FLY_PANDA",
+      "scan_input": [
+        -11.999780000000001,
+        -2.9997800000000012,
+        50.0,
+        -4.49821,
+        1.5017899999999997,
+        50.0
+      ],
+      "sample_name": "",
+      "detectors": [
+        "fs",
+        "xspress3",
+        "panda1",
+        "sclr1"
+      ],
+      "detector_distance": 2.05,
+      "dwell": 0.01,
+      "fast_axis": {
+        "motor_name": "zpssx",
+        "units": "um"
+      },
+      "slow_axis": {
+        "motor_name": "zpssy",
+        "units": "um"
+      },
+      "shape": [
+        50,
+        50
+      ]
+    },
+    "motors": [
+      "zpssx",
+      "zpssy"
+    ],
+    "motor1": "zpssx",
+    "motor2": "zpssy",
+    "shape": [
+      50,
+      50
+    ],
+    "fly_type": "grid"
+  },
+  "roi_positions": {
+    "dssx": -0.00014000000000000001,
+    "dssy": -0.00402,
+    "dssz": 0.00198,
+    "dsx": -2500.0,
+    "dsy": 1.2657289999999999,
+    "dsz": -0.04700000000025284,
+    "sbz": 4999.847000000001,
+    "dsth": -0.31998699999999997
+  },
+  "step_size": 0.18
+}

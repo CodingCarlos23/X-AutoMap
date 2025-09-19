@@ -140,8 +140,6 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
 
-            edit the RM order this still needs to be fixed to the correct #s 
-
             if real_test == 1:
                 RM.item_add(BPlan(
                     "recover_pos_and_scan", #written
@@ -162,11 +160,6 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
 
             print(f"prev ROI: {roi}")
             print()
-
-            if scan_ID is not None:
-                roi = scan_ID
-            else:
-                roi = roi
 
             print(f"Fine Scan to Queue server {filename}")
             print("BPlan: recover_pos_and_scan")
@@ -910,6 +903,15 @@ def submit_and_export(**params):
         real_test=params.get('real_test', 0)
     )
 
+    # Read the step_size from the just-created params file
+    params_json_path = os.path.join(out_dir, f"scan_{last_id}_params.json")
+    if os.path.exists(params_json_path):
+        print(f"Reading params from: {params_json_path}")
+        with open(params_json_path, 'r') as f:
+            params_data = json.load(f)
+            step_size = params_data.get('step_size')
+            print(f"Step size from params file: {step_size}")
+
     elem_list = params.get("elem_list", "")
     tiff_paths = wait_for_element_tiffs(elem_list, out_dir)
 
@@ -921,8 +923,8 @@ def submit_and_export(**params):
     # 
     min_thresh = params.get("min_threshold_intensity", "")
     min_area = params.get("min_threshold_area", "")
-    microns_per_pixel_x = params.get("microns_per_pixel_x", "")
-    microns_per_pixel_y = params.get("microns_per_pixel_y", "")
+    microns_per_pixel_x = step_size#params.get("microns_per_pixel_x", "")
+    microns_per_pixel_y = step_size#params.get("microns_per_pixel_y", "")
     true_origin_x = params.get("true_origin_x", "")
     true_origin_y = params.get("true_origin_y", "")
 
