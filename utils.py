@@ -26,6 +26,7 @@ except ImportError:
     REManagerAPI = None
     RM = None
     print("Warning: bluesky_queueserver_api not found. Bluesky-related functionality will be disabled.")
+    
 #  add the db into this here 
 
 from PyQt5.QtWidgets import (
