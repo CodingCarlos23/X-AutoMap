@@ -22,17 +22,17 @@ try:
     from bluesky_queueserver_api import BPlan
     from bluesky_queueserver_api.zmq import REManagerAPI
     RM = REManagerAPI()
+
+    sys.path.insert(0,'/nsls2/data2/hxn/legacy/home/xf03id/src/hxntools')
+    from hxntools.CompositeBroker import db
+    from hxntools.scan_info import get_scan_positions
+
 except ImportError:
     BPlan = None
     REManagerAPI = None
     RM = None
     print("Warning: bluesky_queueserver_api not found. Bluesky-related functionality will be disabled.")
-#  add the db into this here 
 
-
-sys.path.insert(0,'/nsls2/data2/hxn/legacy/home/xf03id/src/hxntools')
-from hxntools.CompositeBroker import db
-from hxntools.scan_info import get_scan_positions
 
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
@@ -91,7 +91,7 @@ def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path, real_test
     
     roi = {x_motor: cx, y_motor: cy}
 
-    yield from piezos_to_zero()
+    # yield from piezos_to_zero()
     
     load_and_queue(coarse_scan_path, real_test)
 
@@ -191,7 +191,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
         print()
     print("Fine scan sent")
     time.sleep(2)
-    RM.queue_start()
+    # RM.queue_start()
 
 def create_rgb_tiff(tiff_paths, output_dir, element_list):
     """
@@ -260,6 +260,109 @@ def create_rgb_tiff(tiff_paths, output_dir, element_list):
         print(f"❌ An error occurred during RGB TIFF creation: {e}")
         trackback.print_exc()
 
+
+def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_blobs):
+    """
+    Creates a TIFF image with individual blob boxes for each element, named All_of_elements.tiff.
+    The base image is an RGB composite of the first up to 3 elements.
+    """
+    import traceback
+    from pathlib import Path
+    import tifffile as tiff
+    import numpy as np
+    import cv2
+
+    try:
+        # --- Create a base RGB image ---
+        if not element_list or not tiff_paths:
+            print("⚠️ Not enough elements or TIFF paths to create an image.")
+            return
+
+        # Determine a consistent shape from the first element's tiff
+        first_element = element_list[0]
+        first_path = tiff_paths.get(first_element)
+        if not first_path:
+            print(f"⚠️ Cannot find TIFF for base element {first_element}.")
+            return
+        
+        base_img = tiff.imread(first_path)
+        target_shape = base_img.shape
+
+        # Prepare channels based on number of elements
+        if len(element_list) >= 3:
+            elements_to_use = element_list[:3]
+            print(f"Creating RGB base from elements (R, G, B): {', '.join(elements_to_use)}")
+            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
+            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
+            img_b = tiff.imread(tiff_paths[elements_to_use[2]])
+        elif len(element_list) == 2:
+            elements_to_use = element_list[:2]
+            print(f"Creating RG base from elements (R, G): {', '.join(elements_to_use)}")
+            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
+            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
+            img_b = np.zeros(target_shape, dtype=base_img.dtype)
+        else: # 1 element
+            element_to_use = element_list[0]
+            print(f"Creating grayscale base from element: {element_to_use}")
+            img_r = tiff.imread(tiff_paths[element_to_use])
+            img_g = img_r
+            img_b = img_r
+
+        # Resize all to target shape
+        img_r = resize_if_needed(img_r, 'R channel', target_shape)
+        img_g = resize_if_needed(img_g, 'G channel', target_shape)
+        img_b = resize_if_needed(img_b, 'B channel', target_shape)
+
+        # Normalize and merge (BGR for OpenCV drawing)
+        norm_r = cv2.normalize(np.nan_to_num(img_r), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        norm_g = cv2.normalize(np.nan_to_num(img_g), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        norm_b = cv2.normalize(np.nan_to_num(img_b), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        merged_bgr = cv2.merge([norm_b, norm_g, norm_r])
+
+        # --- Draw individual blob boxes ---
+        # NOTE: Swapped green/blue to fix mismatch
+        color_map = {
+            'red':    (0, 0, 255),   # Red stays red
+            'green':  (255, 0, 0),   # Green blobs -> blue box
+            'blue':   (0, 255, 0),   # Blue blobs -> green box
+            'orange': (0, 165, 255),
+            'purple': (128, 0, 128),
+            'cyan':   (255, 255, 0),
+            'olive':  (0, 128, 128),
+            'yellow': (0, 255, 255),
+            'brown':  (42, 42, 165),
+            'pink':   (203, 192, 255)
+        }
+
+        print("Drawing individual element boxes...")
+        for color_name, blob_data in precomputed_blobs.items():
+            if color_name not in color_map:
+                continue
+            
+            box_color = color_map[color_name]
+            
+            for (thresh, area), blobs in blob_data.items():
+                for blob in blobs:
+                    x = blob.get('box_x')
+                    y = blob.get('box_y')
+                    size = blob.get('box_size')
+
+                    if x is not None and y is not None and size is not None:
+                        top_left = (int(x), int(y))
+                        bottom_right = (int(x + size), int(y + size))
+                        cv2.rectangle(merged_bgr, top_left, bottom_right, box_color, 2)
+
+        # --- Save the final image ---
+        merged_rgb_for_save = cv2.cvtColor(merged_bgr, cv2.COLOR_BGR2RGB)
+        output_path = Path(output_dir) / "All_of_elements.tiff"
+        tiff.imwrite(str(output_path), merged_rgb_for_save)
+        print(f"✅ Saved image with individual boxes to: {output_path}")
+
+    except KeyError as e:
+        print(f"❌ Could not create image. Missing element TIFF: {e}")
+    except Exception as e:
+        print(f"❌ An error occurred during image creation: {e}")
+        traceback.print_exc()
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
@@ -1089,39 +1192,40 @@ def fly2d_qserver_scan_export(label,
     # — 1) RECOVERY —
     moved = False
     # If a valid scan_id is provided (truthy), recover from that scan
-    if scan_id:
-        yield from recover_zp_scan_pos(scan_id,
-                                       zp_move_flag=zp_move_flag,
-                                       smar_move_flag=smar_move_flag,
-                                       move_base=1)
-        moved = True
+
+    # if scan_id:
+    #     yield from recover_zp_scan_pos(scan_id,
+    #                                    zp_move_flag=zp_move_flag,
+    #                                    smar_move_flag=smar_move_flag,
+    #                                    move_base=1)
+    #     moved = True
 
     # Else if ROI positions dict/string provided, and not all values None
-    elif roi_positions:
-        if isinstance(roi_positions, str):
-            roi_positions = json.loads(roi_positions)
-        # Filter out keys with None values
-        non_null = {k: v for k, v in roi_positions.items() if v is not None}
-        if non_null:
-            for key, val in non_null.items():
-                if key != "zp.zpz1":
-                    yield from bps.mov(eval(key), val)
-                else:
-                    yield from mov_zpz1(val)
-                print(f"  → {key} @ {val:.3f}")
-            yield from check_for_beam_dump(threshold=5000)
-            if sclr2_ch2.get() < ic1_count * 0.9:
-                yield from peak_the_flux()
-            moved = True
+    # elif roi_positions:
+    #     if isinstance(roi_positions, str):
+    #         roi_positions = json.loads(roi_positions)
+    #     # Filter out keys with None values
+    #     non_null = {k: v for k, v in roi_positions.items() if v is not None}
+    #     if non_null:
+    #         for key, val in non_null.items():
+    #             if key != "zp.zpz1":
+    #                 # yield from bps.mov(eval(key), val)
+    #             else:
+    #                 # yield from mov_zpz1(val)
+    #             print(f"  → {key} @ {val:.3f}")
+    #         # yield from check_for_beam_dump(threshold=5000)
+    #         if sclr2_ch2.get() < ic1_count * 0.9:
+    #             # yield from peak_the_flux()
+    #         moved = True
 
     if not moved:
         print("[RECOVERY] no ROI recovery requested; skipping motor moves.")
 
     # — 2) FLY SCAN —
-    yield from fly2dpd(dets,
-                       mot1, mot1_s, mot1_e, mot1_n,
-                       mot2, mot2_s, mot2_e, mot2_n,
-                       exp_t)
+    # yield from fly2dpd(dets,
+    #                    mot1, mot1_s, mot1_e, mot1_n,
+    #                    mot2, mot2_s, mot2_e, mot2_n,
+    #                    exp_t)
     #produce a zmq message with scan id?
 
     # # — 3) POST-SCAN EXPORTS —
@@ -1219,7 +1323,7 @@ def submit_and_export(**params):
     time.sleep(3)
 
     send_fly2d_to_queue(**clean_params)
-
+    
     # 2) wait
     if params.get('real_test', 0) == 1:
         print("[WAIT] waiting for scan to finish…")
@@ -1237,6 +1341,7 @@ def submit_and_export(**params):
         last_id = hdr.start['scan_id']
     else:
         last_id = 365896 # Use a dummy scan ID for testing 
+        last_id = 341431 # Use a dummy scan ID for testing 
 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
@@ -1366,6 +1471,7 @@ def submit_and_export(**params):
 
     if tiff_paths:
         create_rgb_tiff(tiff_paths, out_dir, elem_list)
+        create_all_elements_tiff(tiff_paths, out_dir, elem_list, precomputed_blobs)
 
     #
     print("done") 
@@ -1415,144 +1521,144 @@ def load_and_queue(json_path, real_test):
 
 
 
-def mosaic_overlap_scan_auto(dets = None, ylen = 100, xlen = 100, overlap_per = 5, dwell = 0.01,
-                        step_size = 250, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
+# def mosaic_overlap_scan_auto(dets = None, ylen = 100, xlen = 100, overlap_per = 5, dwell = 0.01,
+#                         step_size = 250, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
     
 
-    """ Usage <mosaic_overlap_scan([fs, xspress3, eiger2], dwell=0.01, plot_elem=['Au_L'], mll=True)"""
+#     """ Usage <mosaic_overlap_scan([fs, xspress3, eiger2], dwell=0.01, plot_elem=['Au_L'], mll=True)"""
 
-    if dets is None:
-        dets = dets_fast
+#     if dets is None:
+#         dets = dets_fast
 
-    i0_init = sclr2_ch2.get()
+#     i0_init = sclr2_ch2.get()
 
-    max_travel = 25
+#     max_travel = 25
 
-    dsx_i = dsx.position
-    dsy_i = dsy.position
+#     dsx_i = dsx.position
+#     dsy_i = dsy.position
 
-    smarx_i = smarx.position
-    smary_i = smary.position
+#     smarx_i = smarx.position
+#     smary_i = smary.position
 
-    scan_dim = max_travel - round(max_travel*overlap_per*0.01)
+#     scan_dim = max_travel - round(max_travel*overlap_per*0.01)
 
-    x_tile = round(xlen/scan_dim)
-    y_tile = round(ylen/scan_dim)
+#     x_tile = round(xlen/scan_dim)
+#     y_tile = round(ylen/scan_dim)
 
-    xlen_updated = scan_dim*x_tile
-    ylen_updated = scan_dim*y_tile
+#     xlen_updated = scan_dim*x_tile
+#     ylen_updated = scan_dim*y_tile
 
-    #print(f"{xlen_updated = }, {ylen_updated=}")
-
-
-    X_position = np.linspace(0,xlen_updated-scan_dim,x_tile)
-    Y_position = np.linspace(0,ylen_updated-scan_dim,y_tile)
-
-    X_position_abs = smarx.position+(X_position)
-    Y_position_abs = smary.position+(Y_position)
-
-    #print(X_position_abs)
-    #print(Y_position_abs)
+#     #print(f"{xlen_updated = }, {ylen_updated=}")
 
 
-    #print(X_position)
-    #print(Y_position)
+#     X_position = np.linspace(0,xlen_updated-scan_dim,x_tile)
+#     Y_position = np.linspace(0,ylen_updated-scan_dim,y_tile)
 
-    print(f"{xlen_updated = }")
-    print(f"{ylen_updated = }")
-    print(f"# of x grids = {x_tile}")
-    print(f"# of y grids = {y_tile}")
-    print(f"individual grid size in um = {scan_dim} x {scan_dim}")
+#     X_position_abs = smarx.position+(X_position)
+#     Y_position_abs = smary.position+(Y_position)
 
-    num_steps = round(max_travel*1000/step_size)
-
-    unit = "minutes"
-    fly_time = (num_steps**2)*dwell*2
-    num_flys= len(X_position)*len(Y_position)
-    total_time = (fly_time*num_flys)/60
+#     #print(X_position_abs)
+#     #print(Y_position_abs)
 
 
-    if total_time>60:
-        total_time/=60
-        unit = "hours"
+#     #print(X_position)
+#     #print(Y_position)
 
-    ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
+#     print(f"{xlen_updated = }")
+#     print(f"{ylen_updated = }")
+#     print(f"# of x grids = {x_tile}")
+#     print(f"# of y grids = {y_tile}")
+#     print(f"individual grid size in um = {scan_dim} x {scan_dim}")
 
-    if ask == 'y':
+#     num_steps = round(max_travel*1000/step_size)
 
-        #yield from bps.sleep(10)
-        first_sid = db[-1].start["scan_id"]+1
-
-        if sclr2_ch2.get() < i0_init*0.9:
-            yield from peak_the_flux()
-
-        if mll:
-
-            yield from bps.movr(dsy, ylen_updated/-2)
-            yield from bps.movr(dsx, xlen_updated/-2)
-            X_position_abs = dsx.position+(X_position)
-            Y_position_abs = dsy.position+(Y_position)
+#     unit = "minutes"
+#     fly_time = (num_steps**2)*dwell*2
+#     num_flys= len(X_position)*len(Y_position)
+#     total_time = (fly_time*num_flys)/60
 
 
-        else:
-            yield from bps.movr(smary, ylen_updated/-2)
-            yield from bps.movr(smarx, xlen_updated/-2)
-            X_position_abs = smarx.position+(X_position)
-            Y_position_abs = smary.position+(Y_position)
+#     if total_time>60:
+#         total_time/=60
+#         unit = "hours"
 
-            print(X_position_abs)
-            print(Y_position_abs)
+#     ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
 
+#     if ask == 'y':
 
-        for i in tqdm.tqdm(Y_position_abs):
-                for j in tqdm.tqdm(X_position_abs):
-                    print((i,j))
-                    #yield from check_for_beam_dump(threshold=5000)
-                    yield from bps.sleep(1) #cbm catchup time
+#         #yield from bps.sleep(10)
+#         first_sid = db[-1].start["scan_id"]+1
 
-                    fly_dim = scan_dim/2
+#         if sclr2_ch2.get() < i0_init*0.9:
+#             yield from peak_the_flux()
 
-                    if mll:
+#         if mll:
 
-                        print(i,j)
-
-                        yield from bps.mov(dsy, i)
-                        yield from bps.mov(dsx, j)
-                        # yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
-                        yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
-
-                        yield from bps.sleep(3)
-                        yield from bps.mov(dssx,0,dssy,0)
-                        #insert_xrf_map_to_pdf(-1,plot_elem,'dsx')
-                        yield from bps.mov(dsx, dsx_i)
-                        yield from bps.mov(dsy,dsy_i)
-
-                    else:
-                        print(f"{fly_dim = }")
-                        yield from bps.mov(smary, i)
-                        yield from bps.mov(smarx, j)
-                        # yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
-                        yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
-
-                        yield from bps.sleep(1)
-                        yield from bps.mov(zpssx,0,zpssy,0)
-
-                        #try:
-                            #insert_xrf_map_to_pdf(-1,plot_elem[0],'smarx')
-                        #except:
-                            #plt.close()
-                            #pass
+#             yield from bps.movr(dsy, ylen_updated/-2)
+#             yield from bps.movr(dsx, xlen_updated/-2)
+#             X_position_abs = dsx.position+(X_position)
+#             Y_position_abs = dsy.position+(Y_position)
 
 
-                        yield from bps.mov(smarx, smarx_i)
-                        yield from bps.mov(smary,smary_i)
+#         else:
+#             yield from bps.movr(smary, ylen_updated/-2)
+#             yield from bps.movr(smarx, xlen_updated/-2)
+#             X_position_abs = smarx.position+(X_position)
+#             Y_position_abs = smary.position+(Y_position)
 
-        save_page()
+#             print(X_position_abs)
+#             print(Y_position_abs)
 
-        # plot_mosiac_overlap(grid_shape = (y_tile,x_tile),
-        #                     first_scan_num = int(first_sid),
-        #                     elem = plot_elem[0],
-        #                     show_scan_num = True)
 
-    else:
-        return
+#         for i in tqdm.tqdm(Y_position_abs):
+#                 for j in tqdm.tqdm(X_position_abs):
+#                     print((i,j))
+#                     #yield from check_for_beam_dump(threshold=5000)
+#                     yield from bps.sleep(1) #cbm catchup time
+
+#                     fly_dim = scan_dim/2
+
+#                     if mll:
+
+#                         print(i,j)
+
+#                         yield from bps.mov(dsy, i)
+#                         yield from bps.mov(dsx, j)
+#                         # yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
+#                         yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
+
+#                         yield from bps.sleep(3)
+#                         yield from bps.mov(dssx,0,dssy,0)
+#                         #insert_xrf_map_to_pdf(-1,plot_elem,'dsx')
+#                         yield from bps.mov(dsx, dsx_i)
+#                         yield from bps.mov(dsy,dsy_i)
+
+#                     else:
+#                         print(f"{fly_dim = }")
+#                         yield from bps.mov(smary, i)
+#                         yield from bps.mov(smarx, j)
+#                         # yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
+#                         yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
+
+#                         yield from bps.sleep(1)
+#                         yield from bps.mov(zpssx,0,zpssy,0)
+
+#                         #try:
+#                             #insert_xrf_map_to_pdf(-1,plot_elem[0],'smarx')
+#                         #except:
+#                             #plt.close()
+#                             #pass
+
+
+#                         yield from bps.mov(smarx, smarx_i)
+#                         yield from bps.mov(smary,smary_i)
+
+#         save_page()
+
+#         # plot_mosiac_overlap(grid_shape = (y_tile,x_tile),
+#         #                     first_scan_num = int(first_sid),
+#         #                     elem = plot_elem[0],
+#         #                     show_scan_num = True)
+
+#     else:
+#         return
