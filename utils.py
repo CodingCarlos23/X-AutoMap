@@ -248,6 +248,108 @@ def create_rgb_tiff(tiff_paths, output_dir, element_list):
         print(f"❌ An error occurred during RGB TIFF creation: {e}")
         trackback.print_exc()
 
+def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_blobs):
+    """
+    Creates a TIFF image with individual blob boxes for each element, named All_of_elements.tiff.
+    The base image is an RGB composite of the first up to 3 elements.
+    """
+    import traceback
+    from pathlib import Path
+    import tifffile as tiff
+    import numpy as np
+    import cv2
+
+    try:
+        # --- Create a base RGB image ---
+        if not element_list or not tiff_paths:
+            print("⚠️ Not enough elements or TIFF paths to create an image.")
+            return
+
+        # Determine a consistent shape from the first element's tiff
+        first_element = element_list[0]
+        first_path = tiff_paths.get(first_element)
+        if not first_path:
+            print(f"⚠️ Cannot find TIFF for base element {first_element}.")
+            return
+        
+        base_img = tiff.imread(first_path)
+        target_shape = base_img.shape
+
+        # Prepare channels based on number of elements
+        if len(element_list) >= 3:
+            elements_to_use = element_list[:3]
+            print(f"Creating RGB base from elements (R, G, B): {', '.join(elements_to_use)}")
+            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
+            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
+            img_b = tiff.imread(tiff_paths[elements_to_use[2]])
+        elif len(element_list) == 2:
+            elements_to_use = element_list[:2]
+            print(f"Creating RG base from elements (R, G): {', '.join(elements_to_use)}")
+            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
+            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
+            img_b = np.zeros(target_shape, dtype=base_img.dtype)
+        else: # 1 element
+            element_to_use = element_list[0]
+            print(f"Creating grayscale base from element: {element_to_use}")
+            img_r = tiff.imread(tiff_paths[element_to_use])
+            img_g = img_r
+            img_b = img_r
+
+        # Resize all to target shape
+        img_r = resize_if_needed(img_r, 'R channel', target_shape)
+        img_g = resize_if_needed(img_g, 'G channel', target_shape)
+        img_b = resize_if_needed(img_b, 'B channel', target_shape)
+
+        # Normalize and merge (BGR for OpenCV drawing)
+        norm_r = cv2.normalize(np.nan_to_num(img_r), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        norm_g = cv2.normalize(np.nan_to_num(img_g), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        norm_b = cv2.normalize(np.nan_to_num(img_b), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        merged_bgr = cv2.merge([norm_b, norm_g, norm_r])
+
+        # --- Draw individual blob boxes ---
+        # NOTE: Swapped green/blue to fix mismatch
+        color_map = {
+            'red':    (0, 0, 255),   # Red stays red
+            'green':  (255, 0, 0),   # Green blobs -> blue box
+            'blue':   (0, 255, 0),   # Blue blobs -> green box
+            'orange': (0, 165, 255),
+            'purple': (128, 0, 128),
+            'cyan':   (255, 255, 0),
+            'olive':  (0, 128, 128),
+            'yellow': (0, 255, 255),
+            'brown':  (42, 42, 165),
+            'pink':   (203, 192, 255)
+        }
+
+        print("Drawing individual element boxes...")
+        for color_name, blob_data in precomputed_blobs.items():
+            if color_name not in color_map:
+                continue
+            
+            box_color = color_map[color_name]
+            
+            for (thresh, area), blobs in blob_data.items():
+                for blob in blobs:
+                    x = blob.get('box_x')
+                    y = blob.get('box_y')
+                    size = blob.get('box_size')
+
+                    if x is not None and y is not None and size is not None:
+                        top_left = (int(x), int(y))
+                        bottom_right = (int(x + size), int(y + size))
+                        cv2.rectangle(merged_bgr, top_left, bottom_right, box_color, 2)
+
+        # --- Save the final image ---
+        merged_rgb_for_save = cv2.cvtColor(merged_bgr, cv2.COLOR_BGR2RGB)
+        output_path = Path(output_dir) / "All_of_elements.tiff"
+        tiff.imwrite(str(output_path), merged_rgb_for_save)
+        print(f"✅ Saved image with individual boxes to: {output_path}")
+
+    except KeyError as e:
+        print(f"❌ Could not create image. Missing element TIFF: {e}")
+    except Exception as e:
+        print(f"❌ An error occurred during image creation: {e}")
+        traceback.print_exc()
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
@@ -880,6 +982,7 @@ def submit_and_export(**params):
         last_id = hdr.start['scan_id']
     else:
         last_id = 365896 # Use a dummy scan ID for testing 
+        last_id = 341431 # Use a dummy scan ID for testing 
 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
@@ -1004,6 +1107,7 @@ def submit_and_export(**params):
 
     if tiff_paths:
         create_rgb_tiff(tiff_paths, out_dir, elem_list)
+        create_all_elements_tiff(tiff_paths, out_dir, elem_list, precomputed_blobs)
 
     #
     print("done") 
