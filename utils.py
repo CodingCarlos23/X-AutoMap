@@ -120,12 +120,13 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
-        if filename in ("unions_output.json", "union_blobs.json"):
+        if filename.startswith("unions_output") or filename.startswith("union_blobs"):
             continue
         if pattern.match(filename):
             continue
 
         json_path = os.path.join(directory_path, filename)
+        print(filename)
         with open(json_path, "r") as f:
             data = json.load(f)
 
@@ -193,7 +194,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
     time.sleep(2)
     # RM.queue_start()
 
-def create_rgb_tiff(tiff_paths, output_dir, element_list):
+def create_rgb_tiff(tiff_paths, output_dir, element_list, group_name=None):
     """
     Merges the first three element TIFFs into a single RGB TIFF file,
     and draws the union boxes on it.
@@ -228,29 +229,38 @@ def create_rgb_tiff(tiff_paths, output_dir, element_list):
         merged_rgb = cv2.merge([norm_r, norm_g, norm_b])
 
         # Draw union boxes
-        unions_json_path = Path(output_dir) / "unions_output.json"
-        unions_json_path = process_and_save_json(Path(output_dir) / "unions_output.json") #use merged
-        unions_json_path = Path(output_dir) / "unions_output_merged.json"
+        unions_json_filename = "unions_output.json"
+        if group_name:
+            unions_json_filename = f"unions_output_{group_name}.json"
+        unions_json_path = Path(output_dir) / unions_json_filename
+        
         if unions_json_path.exists():
-            print(f"Drawing union boxes from {unions_json_path}...")
-            with open(unions_json_path, "r") as f:
-                unions_data = json.load(f)
-            
-            for union_info in unions_data.values():
-                center = union_info.get("image_center")
-                length = union_info.get("image_length")
+            merged_unions_path = process_and_save_json(unions_json_path)
+            if merged_unions_path and Path(merged_unions_path).exists():
+                print(f"Drawing union boxes from {merged_unions_path}...")
+                with open(merged_unions_path, "r") as f:
+                    unions_data = json.load(f)
+                
+                for union_info in unions_data.values():
+                    center = union_info.get("image_center")
+                    length = union_info.get("image_length")
 
-                if center and length:
-                    x, y = center[0], center[1]
-                    half_len = length / 2
-                    top_left = (int(x - half_len), int(y - half_len))
-                    bottom_right = (int(x + half_len), int(y + half_len))
-                    cv2.rectangle(merged_rgb, top_left, bottom_right, (255, 255, 255), 1) # White box, thickness 2
+                    if center and length:
+                        x, y = center[0], center[1]
+                        half_len = length / 2
+                        top_left = (int(x - half_len), int(y - half_len))
+                        bottom_right = (int(x + half_len), int(y + half_len))
+                        cv2.rectangle(merged_rgb, top_left, bottom_right, (255, 255, 255), 1) # White box, thickness 1
+            else:
+                print(f"⚠️ Could not find merged unions file from {unions_json_path} to draw boxes.")
         else:
             print(f"⚠️ Could not find {unions_json_path} to draw boxes.")
 
         # Save the final image
-        output_path = Path(output_dir) / "Union of elements.tiff"
+        output_filename = "Union of elements.tiff"
+        if group_name:
+            output_filename = f"Union of elements {group_name}.tiff"
+        output_path = Path(output_dir) / output_filename
         tiff.imwrite(output_path, merged_rgb)
         print(f"✅ Saved merged RGB image with boxes to: {output_path}")
 
@@ -261,7 +271,7 @@ def create_rgb_tiff(tiff_paths, output_dir, element_list):
         trackback.print_exc()
 
 
-def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_blobs):
+def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_blobs, group_name=None):
     """
     Creates a TIFF image with individual blob boxes for each element, named All_of_elements.tiff.
     The base image is an RGB composite of the first up to 3 elements.
@@ -354,7 +364,10 @@ def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_b
 
         # --- Save the final image ---
         merged_rgb_for_save = cv2.cvtColor(merged_bgr, cv2.COLOR_BGR2RGB)
-        output_path = Path(output_dir) / "All_of_elements.tiff"
+        output_filename = "All_of_elements.tiff"
+        if group_name:
+            output_filename = f"All_of_elements {group_name}.tiff"
+        output_path = Path(output_dir) / output_filename
         tiff.imwrite(str(output_path), merged_rgb_for_save)
         print(f"✅ Saved image with individual boxes to: {output_path}")
 
@@ -1294,13 +1307,13 @@ def wait_for_queue_done(poll_interval=5.0):
     Block until the QServer queue is empty and the manager goes idle.
     """
     print("[WAIT] polling queue status...", end="", flush=True)
-    while True:
-        st = RM.status()
-        if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-            print(" done.")
-            return
-        print(".", end="", flush=True)
-        time.sleep(poll_interval)
+    # while True:
+    #     st = RM.status()
+    #     if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
+    #         print(" done.")
+    #         return
+    #     print(".", end="", flush=True)
+    #     time.sleep(poll_interval)
 
 
 
@@ -1382,29 +1395,43 @@ def submit_and_export(**params):
                 print(f"x_start from params file: {x_start}")
                 print(f"y_start from params file: {y_start}")
 
-    elem_list = params.get("elem_list", "")
-    tiff_paths = wait_for_element_tiffs(elem_list, out_dir)
+    elem_list_of_lists = params.get("elem_list", [])
+    if not elem_list_of_lists:
+        print("elem_list is empty, nothing to process.")
+        return
+
+    if isinstance(elem_list_of_lists[0], str):
+        elem_list_of_lists = [elem_list_of_lists]
+
+    all_elements = sorted(list(set(elem for sublist in elem_list_of_lists for elem in sublist)))
+    tiff_paths = wait_for_element_tiffs(all_elements, out_dir)
 
     COLOR_ORDER = [
-    'red', 'blue', 'green', 'orange', 'purple', 'cyan', 'olive', 'yellow'
+        'red', 'blue', 'green', 'orange', 'purple', 'cyan', 'olive', 'yellow', 'brown', 'pink'
     ]
     precomputed_blobs = {color: {} for color in COLOR_ORDER}
 
-    # 
     min_thresh = params.get("min_threshold_intensity", "")
     min_area = params.get("min_threshold_area", "")
-    microns_per_pixel_x = step_size#params.get("microns_per_pixel_x", "")
-    microns_per_pixel_y = step_size#params.get("microns_per_pixel_y", "")
-    true_origin_x = x_start#params.get("true_origin_x", "")
-    true_origin_y = y_start#params.get("true_origin_y", "")
+    microns_per_pixel_x = step_size
+    microns_per_pixel_y = step_size
+    true_origin_x = x_start
+    true_origin_y = y_start
 
-    max_tiffs = min(len(tiff_paths), 8)
-    processed_elements = list(tiff_paths.keys())[:max_tiffs]
+    element_to_color = {element: COLOR_ORDER[i] for i, element in enumerate(all_elements) if i < len(COLOR_ORDER)}
 
-    for idx, element in enumerate(processed_elements):
-        color = COLOR_ORDER[idx]
+    for element in all_elements:
+        if element not in tiff_paths:
+            print(f"Skipping element {element} as its TIFF file is missing.")
+            continue
+        
+        color = element_to_color.get(element)
+        if not color:
+            print(f"Skipping element {element} as it has no assigned color.")
+            continue
+
         tiff_path = tiff_paths[element]
-        print(f"Processing {tiff_path.name} as color {color}")
+        print(f"Processing {tiff_path.name} for element {element} as color {color}")
         try:
             tiff_img = tiff.imread(str(tiff_path)).astype(np.float32)
             tiff_norm, tiff_dilated = normalize_and_dilate(tiff_img)
@@ -1421,59 +1448,75 @@ def submit_and_export(**params):
             print(f"❌ Error processing {tiff_path.name}: {e}")
             trackback.print_exc()
 
-    # Only run unions if at least 2 colors are present
-    if len(processed_elements) >= 2:
-        unions = find_union_blobs(
-            precomputed_blobs,
-            microns_per_pixel_x,
-            microns_per_pixel_y,
-            true_origin_x,
-            true_origin_y
-        )
+    for elem_list in elem_list_of_lists:
+        group_name = "".join(elem_list)
+        print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
 
-        #add the filter here to merge boxes --> did not work KeyError: 'center'
-        unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
-        
+        group_blobs = {}
+        group_element_to_color = {}
+        for i, element in enumerate(elem_list):
+            if i >= 3: # find_union_blobs supports 3 elements
+                print(f"Warning: element group has more than 3 elements. Only first 3 will be used for union: {elem_list}")
+                break
+            
+            original_color = element_to_color.get(element)
+            if not original_color or not precomputed_blobs.get(original_color):
+                print(f"Warning: No blobs found for element {element} in group {group_name}. Skipping it in union.")
+                continue
 
-        formatted_unions = {}
+            new_color = ['red', 'green', 'blue'][i]
+            group_blobs[new_color] = precomputed_blobs[original_color]
+            group_element_to_color[element] = new_color
 
-        print("Processsing images now")
-        for idx, union in unions.items():
-            box_name = f"Union Box #{idx}"
-            formatted = {
-                "text": box_name,
-                "image_center": union["center"],
-                "image_length": union["length"],
-                "image_area_px²": union["area"],
-                "real_center_um": union["real_center_um"],
-                "real_size_um": union["real_size_um"],
-                "real_area_um²": union["real_area_um\u00b2"],
-                "real_top_left_um": union["real_top_left_um"],
-                "real_bottom_right_um": union["real_bottom_right_um"]
-            }
+        if len(group_blobs) >= 2:
+            unions = find_union_blobs(
+                group_blobs,
+                microns_per_pixel_x,
+                microns_per_pixel_y,
+                true_origin_x,
+                true_origin_y
+            )
 
-            formatted_unions[box_name] = formatted
+            unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
 
-        # Save to file
-        out_dir_p = Path(out_dir)  # Convert string to Path object
-        output_path = out_dir_p / "unions_output.json"#"data/headless_scan/unions_output.json"
-        with open(output_path, "w") as f:
-            json.dump(formatted_unions, f, indent=2)
-        print(f"\n✅ Union data saved to: {output_path}")
-        print(formatted_unions)
+            formatted_unions = {}
+            print("Processing images now")
+            for idx, union in unions.items():
+                box_name = f"Union Box {group_name} #{idx.split('#')[-1].strip()}"
+                formatted = {
+                    "text": box_name,
+                    "image_center": union["center"],
+                    "image_length": union["length"],
+                    "image_area_px²": union["area"],
+                    "real_center_um": union["real_center_um"],
+                    "real_size_um": union["real_size_um"],
+                    "real_area_um²": union["real_area_um\u00b2"],
+                    "real_top_left_um": union["real_top_left_um"],
+                    "real_bottom_right_um": union["real_bottom_right_um"]
+                }
+                formatted_unions[box_name] = formatted
 
-        save_each_blob_as_individual_scan(formatted_unions, out_dir)
+            output_path = Path(out_dir) / f"unions_output_{group_name}.json"
+            with open(output_path, "w") as f:
+                json.dump(formatted_unions, f, indent=2)
+            print(f"\n✅ Union data for {group_name} saved to: {output_path}")
+            print(formatted_unions)
 
+            save_each_blob_as_individual_scan(formatted_unions, out_dir)
 
-        print("Perform fine scan now")
-        headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
-        #RM.queue_start()
+            print("Perform fine scan now")
+            headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
 
-    if tiff_paths:
-        create_rgb_tiff(tiff_paths, out_dir, elem_list)
-        create_all_elements_tiff(tiff_paths, out_dir, elem_list, precomputed_blobs)
+        if tiff_paths:
+            group_blobs_for_all_elements_tiff = {}
+            for element in elem_list:
+                color = element_to_color.get(element)
+                if color and color in precomputed_blobs:
+                    group_blobs_for_all_elements_tiff[color] = precomputed_blobs[color]
 
-    #
+            create_rgb_tiff(tiff_paths, out_dir, elem_list, group_name)
+            create_all_elements_tiff(tiff_paths, out_dir, elem_list, group_blobs_for_all_elements_tiff, group_name)
+
     print("done") 
     print("[DONE] all exports complete.")
     time.sleep(2)

@@ -13,7 +13,7 @@
   "scan_id":         null,
   "zp_move_flag":    0,
   "smar_move_flag":  0,
-  "elem_list":        ["Fe","Cr","Mn"],
+  "elem_list":        [["Fe","Ca","S"], ["Cr","Fe","Mn"]],
   "export_norm":      "sclr1_ch4",
   "data_wd":          "./data/user_macros",
   "pos_save_to":      "./data/user_macros",
