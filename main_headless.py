@@ -58,23 +58,24 @@ def run_headless_processing():
     if real_or_test == 0:
         print("\nRunning coarse scan (test mode)...")
         headless_send_queue_coarse_scan(analysis_params, initial_scan_path, 0)
-
+       
     # Real mode: run grid scan only
     elif real_or_test == 1:
         print("\nGrid scan starts here (real mode)")
-        yield from mosaic_overlap_scan_auto(
-            dets=None,
-            ylen=200,
-            xlen=200,
-            overlap_per=10,
-            dwell=0.01,
-            step_size=500,
-            plot_elem=["None"],
-            mll=False,
-            beamline_params=analysis_params,
-            initial_scan_path=initial_scan_path,
-        )
+        # yield from mosaic_overlap_scan_auto(
+        #     dets=None,
+        #     ylen=200,
+        #     xlen=200,
+        #     overlap_per=10,
+        #     dwell=0.01,
+        #     step_size=500,
+        #     plot_elem=["None"],
+        #     mll=False,
+        #     beamline_params=analysis_params,
+        #     initial_scan_path=initial_scan_path,
+        # )
 
+    print()
     print("Scans Done")
 
 

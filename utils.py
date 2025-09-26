@@ -91,7 +91,7 @@ def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path, real_test
     
     roi = {x_motor: cx, y_motor: cy}
 
-    yield from piezos_to_zero()
+    # yield from piezos_to_zero()
     
     load_and_queue(coarse_scan_path, real_test)
 
@@ -192,7 +192,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
         print()
     print("Fine scan sent")
     time.sleep(2)
-    RM.queue_start()
+    # RM.queue_start()
 
 def create_rgb_tiff(tiff_paths, output_dir, element_list, group_name=None):
     """
@@ -1176,84 +1176,84 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None, real_test=0):
 
     return result
 
-def fly2d_qserver_scan_export(label,
-                           dets,
-                           mot1, mot1_s, mot1_e, mot1_n,
-                           mot2, mot2_s, mot2_e, mot2_n,
-                           exp_t,
-                           roi_positions=None,
-                           scan_id=None,
-                           zp_move_flag=1,
-                           smar_move_flag=1,
-                           ic1_count=55000,
-                           # **POST-SCAN EXPORTS**
-                           elem_list=None,           # list of elements for XRF
-                           export_norm='sclr1_ch4',  # channel to normalize by
-                           data_wd='.',              # where to write TIFFs
-                           pos_save_to=None):        # JSON filename or dir
-    """
-    1) Optionally recover a previous scan or ROI dict
-    2) Do beam/flux checks
-    3) Run fly2dpd
-    4) Export XRF-ROI data TIFFs
-    5) Save final ROI positions JSON
-    """
-    print(f"{label} starting…")
-    RE.md["scan_name"] = str(label)
+# def fly2d_qserver_scan_export(label,
+#                            dets,
+#                            mot1, mot1_s, mot1_e, mot1_n,
+#                            mot2, mot2_s, mot2_e, mot2_n,
+#                            exp_t,
+#                            roi_positions=None,
+#                            scan_id=None,
+#                            zp_move_flag=1,
+#                            smar_move_flag=1,
+#                            ic1_count=55000,
+#                            # **POST-SCAN EXPORTS**
+#                            elem_list=None,           # list of elements for XRF
+#                            export_norm='sclr1_ch4',  # channel to normalize by
+#                            data_wd='.',              # where to write TIFFs
+#                            pos_save_to=None):        # JSON filename or dir
+#     """
+#     1) Optionally recover a previous scan or ROI dict
+#     2) Do beam/flux checks
+#     3) Run fly2dpd
+#     4) Export XRF-ROI data TIFFs
+#     5) Save final ROI positions JSON
+#     """
+#     print(f"{label} starting…")
+#     RE.md["scan_name"] = str(label)
 
-    # — 1) RECOVERY —
-    moved = False
-    # If a valid scan_id is provided (truthy), recover from that scan
+#     # — 1) RECOVERY —
+#     moved = False
+#     # If a valid scan_id is provided (truthy), recover from that scan
 
-    if scan_id:
-        yield from recover_zp_scan_pos(scan_id,
-                                       zp_move_flag=zp_move_flag,
-                                       smar_move_flag=smar_move_flag,
-                                       move_base=1)
-        moved = True
+#     if scan_id:
+#         yield from recover_zp_scan_pos(scan_id,
+#                                        zp_move_flag=zp_move_flag,
+#                                        smar_move_flag=smar_move_flag,
+#                                        move_base=1)
+#         moved = True
 
-    Else if ROI positions dict/string provided, and not all values None
-    elif roi_positions:
-        if isinstance(roi_positions, str):
-            roi_positions = json.loads(roi_positions)
-        # Filter out keys with None values
-        non_null = {k: v for k, v in roi_positions.items() if v is not None}
-        if non_null:
-            for key, val in non_null.items():
-                if key != "zp.zpz1":
-                    # yield from bps.mov(eval(key), val)
-                else:
-                    # yield from mov_zpz1(val)
-                print(f"  → {key} @ {val:.3f}")
-            # yield from check_for_beam_dump(threshold=5000)
-            if sclr2_ch2.get() < ic1_count * 0.9:
-                # yield from peak_the_flux()
-            moved = True
+#     # Else if ROI positions dict/string provided, and not all values None
+#     elif roi_positions:
+#         if isinstance(roi_positions, str):
+#             roi_positions = json.loads(roi_positions)
+#         # Filter out keys with None values
+#         non_null = {k: v for k, v in roi_positions.items() if v is not None}
+#         if non_null:
+#             for key, val in non_null.items():
+#                 if key != "zp.zpz1":
+#                     # yield from bps.mov(eval(key), val)
+#                 else:
+#                     # yield from mov_zpz1(val)
+#                 print(f"  → {key} @ {val:.3f}")
+#             # yield from check_for_beam_dump(threshold=5000)
+#             if sclr2_ch2.get() < ic1_count * 0.9:
+#                 # yield from peak_the_flux()
+#             moved = True
 
-    if not moved:
-        print("[RECOVERY] no ROI recovery requested; skipping motor moves.")
+#     if not moved:
+#         print("[RECOVERY] no ROI recovery requested; skipping motor moves.")
 
-    # — 2) FLY SCAN —
-    yield from fly2dpd(dets,
-                       mot1, mot1_s, mot1_e, mot1_n,
-                       mot2, mot2_s, mot2_e, mot2_n,
-                       exp_t)
-    # produce a zmq message with scan id?
+#     # — 2) FLY SCAN —
+#     yield from fly2dpd(dets,
+#                        mot1, mot1_s, mot1_e, mot1_n,
+#                        mot2, mot2_s, mot2_e, mot2_n,
+#                        exp_t)
+#     # produce a zmq message with scan id?
 
-    # — 3) POST-SCAN EXPORTS —
-    hdr = db[-1]
-    last_id = hdr.start["scan_id"]
-    print(f"[POST] exporting XRF ROI data for scan {last_id}…")
-    export_xrf_roi_data(last_id,
-                        norm=export_norm,
-                        elem_list=elem_list or [],
-                        wd=data_wd)
+#     # — 3) POST-SCAN EXPORTS —
+#     hdr = db[-1]
+#     last_id = hdr.start["scan_id"]
+#     print(f"[POST] exporting XRF ROI data for scan {last_id}…")
+#     export_xrf_roi_data(last_id,
+#                         norm=export_norm,
+#                         elem_list=elem_list or [],
+#                         wd=data_wd)
 
-    if pos_save_to:
-        print(f"[POST] saving ROI positions JSON to {pos_save_to}…")
-        export_scan_params(sid=last_id, zp_flag=True, save_to=pos_save_to)
+#     if pos_save_to:
+#         print(f"[POST] saving ROI positions JSON to {pos_save_to}…")
+#         export_scan_params(sid=last_id, zp_flag=True, save_to=pos_save_to)
 
-    print("[POST] done.")
+#     print("[POST] done.")
 
 
 def send_fly2d_to_queue(label,
@@ -1306,14 +1306,13 @@ def wait_for_queue_done(poll_interval=5.0):
     Block until the QServer queue is empty and the manager goes idle.
     """
     print("[WAIT] polling queue status...", end="", flush=True)
-    while True:
-        st = RM.status()
-        if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-            print(" done.")
-            return
-        print(".", end="", flush=True)
-        time.sleep(poll_interval)
-
+    # while True:
+    #     st = RM.status()
+    #     if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
+    #         print(" done.")
+    #         return
+    #     print(".", end="", flush=True)
+    #     time.sleep(poll_interval)
 
 
 def submit_and_export(**params):
@@ -1447,6 +1446,53 @@ def submit_and_export(**params):
             print(f"❌ Error processing {tiff_path.name}: {e}")
             trackback.print_exc()
 
+
+    send_individual_scan_param = 1
+
+    if send_individual_scan_param == 1:
+        print("Work here only ")
+        for color in precomputed_blobs:
+            for (thresh, area), blobs in precomputed_blobs[color].items():
+                for blob in blobs:
+                    cx, cy = blob['center']
+                    length = blob['box_size']
+                    top_left_x = blob['box_x']
+                    top_left_y = blob['box_y']
+                    bottom_right_x = top_left_x + length
+                    bottom_right_y = top_left_y + length
+
+                    real_cx = (cx * microns_per_pixel_x) + true_origin_x
+                    real_cy = (cy * microns_per_pixel_y) + true_origin_y
+                    real_length_x = length * microns_per_pixel_x
+                    real_length_y = length * microns_per_pixel_y
+                    real_area = real_length_x * real_length_y
+
+                    real_top_left = (
+                        (top_left_x * microns_per_pixel_x) + true_origin_x,
+                        (top_left_y * microns_per_pixel_y) + true_origin_y
+                    )
+                    real_bottom_right = (
+                        (bottom_right_x * microns_per_pixel_x) + true_origin_x,
+                        (bottom_right_y * microns_per_pixel_y) + true_origin_y
+                    )
+                    
+                    blob['real_center_um'] = [real_cx, real_cy]
+                    blob['real_size_um'] = [real_length_x, real_length_y]
+                    blob['real_area_um²'] = real_area
+                    blob['real_top_left_um'] = list(real_top_left)
+                    blob['real_bottom_right_um'] = list(real_bottom_right)
+        
+        string_keyed_blobs = {}
+        for color, data in precomputed_blobs.items():
+            string_keyed_blobs[color] = {}
+            for (thresh, area), blobs in data.items():
+                key = f"({thresh}, {area})"
+                string_keyed_blobs[color][key] = blobs
+        
+        print(json.dumps(make_json_serializable(string_keyed_blobs), indent=2))
+        sys.exit()
+        
+
     for elem_list in elem_list_of_lists:
         group_name = "".join(elem_list)
         print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
@@ -1563,144 +1609,144 @@ def load_and_queue(json_path, real_test):
 
 
 
-def mosaic_overlap_scan_auto(dets = None, ylen = 100, xlen = 100, overlap_per = 5, dwell = 0.01,
-                        step_size = 250, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
+# def mosaic_overlap_scan_auto(dets = None, ylen = 100, xlen = 100, overlap_per = 5, dwell = 0.01,
+#                         step_size = 250, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
     
 
-    """ Usage <mosaic_overlap_scan([fs, xspress3, eiger2], dwell=0.01, plot_elem=['Au_L'], mll=True)"""
+#     """ Usage <mosaic_overlap_scan([fs, xspress3, eiger2], dwell=0.01, plot_elem=['Au_L'], mll=True)"""
 
-    if dets is None:
-        dets = dets_fast
+#     if dets is None:
+#         dets = dets_fast
 
-    i0_init = sclr2_ch2.get()
+#     i0_init = sclr2_ch2.get()
 
-    max_travel = 25
+#     max_travel = 25
 
-    dsx_i = dsx.position
-    dsy_i = dsy.position
+#     dsx_i = dsx.position
+#     dsy_i = dsy.position
 
-    smarx_i = smarx.position
-    smary_i = smary.position
+#     smarx_i = smarx.position
+#     smary_i = smary.position
 
-    scan_dim = max_travel - round(max_travel*overlap_per*0.01)
+#     scan_dim = max_travel - round(max_travel*overlap_per*0.01)
 
-    x_tile = round(xlen/scan_dim)
-    y_tile = round(ylen/scan_dim)
+#     x_tile = round(xlen/scan_dim)
+#     y_tile = round(ylen/scan_dim)
 
-    xlen_updated = scan_dim*x_tile
-    ylen_updated = scan_dim*y_tile
+#     xlen_updated = scan_dim*x_tile
+#     ylen_updated = scan_dim*y_tile
 
-    #print(f"{xlen_updated = }, {ylen_updated=}")
-
-
-    X_position = np.linspace(0,xlen_updated-scan_dim,x_tile)
-    Y_position = np.linspace(0,ylen_updated-scan_dim,y_tile)
-
-    X_position_abs = smarx.position+(X_position)
-    Y_position_abs = smary.position+(Y_position)
-
-    #print(X_position_abs)
-    #print(Y_position_abs)
+#     #print(f"{xlen_updated = }, {ylen_updated=}")
 
 
-    #print(X_position)
-    #print(Y_position)
+#     X_position = np.linspace(0,xlen_updated-scan_dim,x_tile)
+#     Y_position = np.linspace(0,ylen_updated-scan_dim,y_tile)
 
-    print(f"{xlen_updated = }")
-    print(f"{ylen_updated = }")
-    print(f"# of x grids = {x_tile}")
-    print(f"# of y grids = {y_tile}")
-    print(f"individual grid size in um = {scan_dim} x {scan_dim}")
+#     X_position_abs = smarx.position+(X_position)
+#     Y_position_abs = smary.position+(Y_position)
 
-    num_steps = round(max_travel*1000/step_size)
-
-    unit = "minutes"
-    fly_time = (num_steps**2)*dwell*2
-    num_flys= len(X_position)*len(Y_position)
-    total_time = (fly_time*num_flys)/60
+#     #print(X_position_abs)
+#     #print(Y_position_abs)
 
 
-    if total_time>60:
-        total_time/=60
-        unit = "hours"
+#     #print(X_position)
+#     #print(Y_position)
 
-    ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
+#     print(f"{xlen_updated = }")
+#     print(f"{ylen_updated = }")
+#     print(f"# of x grids = {x_tile}")
+#     print(f"# of y grids = {y_tile}")
+#     print(f"individual grid size in um = {scan_dim} x {scan_dim}")
 
-    if ask == 'y':
+#     num_steps = round(max_travel*1000/step_size)
 
-        time.sleep(2)
-        first_sid = db[-1].start["scan_id"]+1
-
-        if sclr2_ch2.get() < i0_init*0.9:
-            yield from peak_the_flux()
-
-        if mll:
-
-            yield from bps.movr(dsy, ylen_updated/-2)
-            yield from bps.movr(dsx, xlen_updated/-2)
-            X_position_abs = dsx.position+(X_position)
-            Y_position_abs = dsy.position+(Y_position)
+#     unit = "minutes"
+#     fly_time = (num_steps**2)*dwell*2
+#     num_flys= len(X_position)*len(Y_position)
+#     total_time = (fly_time*num_flys)/60
 
 
-        else:
-            yield from bps.movr(smary, ylen_updated/-2)
-            yield from bps.movr(smarx, xlen_updated/-2)
-            X_position_abs = smarx.position+(X_position)
-            Y_position_abs = smary.position+(Y_position)
+#     if total_time>60:
+#         total_time/=60
+#         unit = "hours"
 
-            print(X_position_abs)
-            print(Y_position_abs)
+#     ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
 
+#     if ask == 'y':
 
-        for i in tqdm.tqdm(Y_position_abs):
-                for j in tqdm.tqdm(X_position_abs):
-                    print((i,j))
-                    #yield from check_for_beam_dump(threshold=5000)
-                    yield from bps.sleep(1) #cbm catchup time
+#         time.sleep(2)
+#         first_sid = db[-1].start["scan_id"]+1
 
-                    fly_dim = scan_dim/2
+#         if sclr2_ch2.get() < i0_init*0.9:
+#             yield from peak_the_flux()
 
-                    if mll:
+#         if mll:
 
-                        print(i,j)
-
-                        yield from bps.mov(dsy, i)
-                        yield from bps.mov(dsx, j)
-                        # yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
-                        yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
-
-                        yield from bps.sleep(3)
-                        yield from bps.mov(dssx,0,dssy,0)
-                        #insert_xrf_map_to_pdf(-1,plot_elem,'dsx')
-                        yield from bps.mov(dsx, dsx_i)
-                        yield from bps.mov(dsy,dsy_i)
-
-                    else:
-                        print(f"{fly_dim = }")
-                        yield from bps.mov(smary, i)
-                        yield from bps.mov(smarx, j)
-                        # yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
-                        yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
-
-                        yield from bps.sleep(1)
-                        yield from bps.mov(zpssx,0,zpssy,0)
-
-                        #try:
-                            #insert_xrf_map_to_pdf(-1,plot_elem[0],'smarx')
-                        #except:
-                            #plt.close()
-                            #pass
+#             yield from bps.movr(dsy, ylen_updated/-2)
+#             yield from bps.movr(dsx, xlen_updated/-2)
+#             X_position_abs = dsx.position+(X_position)
+#             Y_position_abs = dsy.position+(Y_position)
 
 
-                        yield from bps.mov(smarx, smarx_i)
-                        yield from bps.mov(smary,smary_i)
+#         else:
+#             yield from bps.movr(smary, ylen_updated/-2)
+#             yield from bps.movr(smarx, xlen_updated/-2)
+#             X_position_abs = smarx.position+(X_position)
+#             Y_position_abs = smary.position+(Y_position)
 
-        save_page()
+#             print(X_position_abs)
+#             print(Y_position_abs)
 
-        # plot_mosiac_overlap(grid_shape = (y_tile,x_tile),
-        #                     first_scan_num = int(first_sid),
-        #                     elem = plot_elem[0],
-        #                     show_scan_num = True)
 
-    else:
-        return
+#         for i in tqdm.tqdm(Y_position_abs):
+#                 for j in tqdm.tqdm(X_position_abs):
+#                     print((i,j))
+#                     #yield from check_for_beam_dump(threshold=5000)
+#                     yield from bps.sleep(1) #cbm catchup time
+
+#                     fly_dim = scan_dim/2
+
+#                     if mll:
+
+#                         print(i,j)
+
+#                         yield from bps.mov(dsy, i)
+#                         yield from bps.mov(dsx, j)
+#                         # yield from fly2dpd(dets,dssx,-1*fly_dim,fly_dim,num_steps,dssy,-1*fly_dim,fly_dim,num_steps,dwell)
+#                         yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
+
+#                         yield from bps.sleep(3)
+#                         yield from bps.mov(dssx,0,dssy,0)
+#                         #insert_xrf_map_to_pdf(-1,plot_elem,'dsx')
+#                         yield from bps.mov(dsx, dsx_i)
+#                         yield from bps.mov(dsy,dsy_i)
+
+#                     else:
+#                         print(f"{fly_dim = }")
+#                         yield from bps.mov(smary, i)
+#                         yield from bps.mov(smarx, j)
+#                         # yield from fly2dpd(dets, zpssx,-1*fly_dim,fly_dim,num_steps,zpssy, -1*fly_dim,fly_dim,num_steps,dwell)
+#                         yield from headless_send_queue_coarse_scan(beamline_params, initial_scan_path, 1)
+
+#                         yield from bps.sleep(1)
+#                         yield from bps.mov(zpssx,0,zpssy,0)
+
+#                         #try:
+#                             #insert_xrf_map_to_pdf(-1,plot_elem[0],'smarx')
+#                         #except:
+#                             #plt.close()
+#                             #pass
+
+
+#                         yield from bps.mov(smarx, smarx_i)
+#                         yield from bps.mov(smary,smary_i)
+
+#         save_page()
+
+#         # plot_mosiac_overlap(grid_shape = (y_tile,x_tile),
+#         #                     first_scan_num = int(first_sid),
+#         #                     elem = plot_elem[0],
+#         #                     show_scan_num = True)
+
+#     else:
+#         return
