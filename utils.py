@@ -1450,7 +1450,16 @@ def submit_and_export(**params):
     send_individual_scan_param = 1
 
     if send_individual_scan_param == 1:
-        print("Work here only ")
+        print("--- Individual Scan Parameters ---")
+        
+        # Get beamline parameters from the main params dict
+        dets = params.get("det_name", "dets_fast")
+        x_motor = params.get("mot1", "zpssx")
+        y_motor = params.get("mot2", "zpssy")
+        exp_t = params.get("exp_t", 0.01)
+        step_size = params.get("step_size_fine", 100)
+
+        # First, calculate real-world coordinates for all blobs
         for color in precomputed_blobs:
             for (thresh, area), blobs in precomputed_blobs[color].items():
                 for blob in blobs:
@@ -1481,15 +1490,52 @@ def submit_and_export(**params):
                     blob['real_area_um²'] = real_area
                     blob['real_top_left_um'] = list(real_top_left)
                     blob['real_bottom_right_um'] = list(real_bottom_right)
+
+        # Now, iterate again and print the formatted output
+        for color in precomputed_blobs:
+            for (thresh, area), blobs in precomputed_blobs[color].items():
+                for blob in blobs:
+                    label = blob['Box']
+                    cx = blob['real_center_um'][0]
+                    cy = blob['real_center_um'][1]
+                    sx = blob['real_size_um'][0]
+                    sy = blob['real_size_um'][1]
+
+                    # Define relative scan range around center
+                    x_start = -sx / 2
+                    x_end = sx / 2
+                    y_start = -sy / 2
+                    y_end = sy / 2
+
+                    num_steps_x = int(sx / step_size) if step_size > 0 else 0
+                    num_steps_y = int(sy / step_size) if step_size > 0 else 0
+                    roi = {x_motor: cx, y_motor: cy}
+
+
+
+
+                    #added RM here
+
+
+
+
+                    print(f"Scan Parameters for: {label}")
+                    print("BPlan: recover_pos_and_scan")
+                    print(f"label: {label}")
+                    print(f"roi: {roi}")
+                    print(f"dets: {dets}")
+                    print(f"x_motor: {x_motor}")
+                    print(f"x_start: {x_start}")
+                    print(f"x_end: {x_end}")
+                    print(f"num_steps_x: {num_steps_x}")
+                    print(f"y_motor: {y_motor}")
+                    print(f"y_start: {y_start}")
+                    print(f"y_end: {y_end}")
+                    print(f"num_steps_y: {num_steps_y}")
+                    print(f"exp_t: {exp_t}")
+                    print(f"step_size: {step_size}")
+                    print("------------------------\n")
         
-        string_keyed_blobs = {}
-        for color, data in precomputed_blobs.items():
-            string_keyed_blobs[color] = {}
-            for (thresh, area), blobs in data.items():
-                key = f"({thresh}, {area})"
-                string_keyed_blobs[color][key] = blobs
-        
-        print(json.dumps(make_json_serializable(string_keyed_blobs), indent=2))
         sys.exit()
         
 
