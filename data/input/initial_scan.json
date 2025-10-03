@@ -20,12 +20,12 @@
   "min_threshold_intensity": 100,
   "min_threshold_area":200,
   "step_size_fine": 0.100,
-
   "exp_t_fine": 0.02,
   "analysis": true,
   "execute": true,
   "microns_per_pixel_x": 0.250,
   "microns_per_pixel_y": 0.250,
   "true_origin_x": 10,
-  "true_origin_y": 20
+  "true_origin_y": 20,
+  "send_individual_scan": 0
 }

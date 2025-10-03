@@ -1447,9 +1447,11 @@ def submit_and_export(**params):
             trackback.print_exc()
 
 
-    send_individual_scan_param = 1
+    #0 means union scans are sent for high res
+    #1 means individual scans are sent for high res
+    send_individual_scan = params.get("send_individual_scan", 0)
 
-    if send_individual_scan_param == 1:
+    if send_individual_scan == 1:
         print("--- Individual Scan Parameters ---")
         
         # Get beamline parameters from the main params dict
@@ -1458,6 +1460,7 @@ def submit_and_export(**params):
         y_motor = params.get("mot2", "zpssy")
         exp_t = params.get("exp_t", 0.01)
         step_size = params.get("step_size_fine", 100)
+        real_test = params.get('real_test', 0)
 
         # First, calculate real-world coordinates for all blobs
         for color in precomputed_blobs:
@@ -1511,13 +1514,23 @@ def submit_and_export(**params):
                     num_steps_y = int(sy / step_size) if step_size > 0 else 0
                     roi = {x_motor: cx, y_motor: cy}
 
-
-
-
-                    #added RM here
-
-
-
+                    if real_test == 1:
+                        RM.item_add(BPlan(
+                            "recover_pos_and_scan",
+                            label,
+                            roi,
+                            dets,
+                            x_motor,
+                            x_start,
+                            x_end,
+                            num_steps_x,
+                            y_motor,
+                            y_start,
+                            y_end,
+                            num_steps_y,
+                            exp_t,
+                            step_size
+                        ))
 
                     print(f"Scan Parameters for: {label}")
                     print("BPlan: recover_pos_and_scan")
@@ -1535,78 +1548,75 @@ def submit_and_export(**params):
                     print(f"exp_t: {exp_t}")
                     print(f"step_size: {step_size}")
                     print("------------------------\n")
-        
-        sys.exit()
-        
+    else:
+        for elem_list in elem_list_of_lists:
+            group_name = "".join(elem_list)
+            print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
 
-    for elem_list in elem_list_of_lists:
-        group_name = "".join(elem_list)
-        print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
-
-        group_blobs_for_union = {}
-        for i, element in enumerate(elem_list):
-            if i >= 3: # find_union_blobs supports 3 elements
-                print(f"Warning: element group has more than 3 elements. Only first 3 will be used for union: {elem_list}")
-                break
-            
-            original_color = element_to_color.get(element)
-            if not original_color or not precomputed_blobs.get(original_color):
-                print(f"Warning: No blobs found for element {element} in group {group_name}. Skipping it in union.")
-                continue
-
-            new_color = ['red', 'green', 'blue'][i]
-            group_blobs_for_union[new_color] = precomputed_blobs[original_color]
-
-        if len(group_blobs_for_union) >= 2:
-            unions = find_union_blobs(
-                group_blobs_for_union,
-                microns_per_pixel_x,
-                microns_per_pixel_y,
-                true_origin_x,
-                true_origin_y
-            )
-
-            unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
-
-            formatted_unions = {}
-            print("Processing images now")
-            for idx, union in unions.items():
-                box_name = f"Union Box {group_name} #{idx.split('#')[-1].strip()}"
-                formatted = {
-                    "text": box_name,
-                    "image_center": union["center"],
-                    "image_length": union["length"],
-                    "image_area_px²": union["area"],
-                    "real_center_um": union["real_center_um"],
-                    "real_size_um": union["real_size_um"],
-                    "real_area_um²": union["real_area_um\u00b2"],
-                    "real_top_left_um": union["real_top_left_um"],
-                    "real_bottom_right_um": union["real_bottom_right_um"]
-                }
-                formatted_unions[box_name] = formatted
-
-            output_path = Path(out_dir) / f"unions_output_{group_name}.json"
-            with open(output_path, "w") as f:
-                json.dump(formatted_unions, f, indent=2)
-            print(f"\n✅ Union data for {group_name} saved to: {output_path}")
-            print(formatted_unions)
-
-            save_each_blob_as_individual_scan(formatted_unions, out_dir)
-
-            print("Perform fine scan now")
-            headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
-
-        if tiff_paths:
-            group_blobs_for_all_elements = {}
+            group_blobs_for_union = {}
             for i, element in enumerate(elem_list):
-                if i >= len(COLOR_ORDER): break
+                if i >= 3: # find_union_blobs supports 3 elements
+                    print(f"Warning: element group has more than 3 elements. Only first 3 will be used for union: {elem_list}")
+                    break
+                
                 original_color = element_to_color.get(element)
-                if original_color and original_color in precomputed_blobs:
-                    new_color = COLOR_ORDER[i]
-                    group_blobs_for_all_elements[new_color] = precomputed_blobs[original_color]
+                if not original_color or not precomputed_blobs.get(original_color):
+                    print(f"Warning: No blobs found for element {element} in group {group_name}. Skipping it in union.")
+                    continue
 
-            create_rgb_tiff(tiff_paths, out_dir, elem_list, group_name)
-            create_all_elements_tiff(tiff_paths, out_dir, elem_list, group_blobs_for_all_elements, group_name)
+                new_color = ['red', 'green', 'blue'][i]
+                group_blobs_for_union[new_color] = precomputed_blobs[original_color]
+
+            if len(group_blobs_for_union) >= 2:
+                unions = find_union_blobs(
+                    group_blobs_for_union,
+                    microns_per_pixel_x,
+                    microns_per_pixel_y,
+                    true_origin_x,
+                    true_origin_y
+                )
+
+                unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
+
+                formatted_unions = {}
+                print("Processing images now")
+                for idx, union in unions.items():
+                    box_name = f"Union Box {group_name} #{idx.split('#')[-1].strip()}"
+                    formatted = {
+                        "text": box_name,
+                        "image_center": union["center"],
+                        "image_length": union["length"],
+                        "image_area_px²": union["area"],
+                        "real_center_um": union["real_center_um"],
+                        "real_size_um": union["real_size_um"],
+                        "real_area_um²": union["real_area_um\u00b2"],
+                        "real_top_left_um": union["real_top_left_um"],
+                        "real_bottom_right_um": union["real_bottom_right_um"]
+                    }
+                    formatted_unions[box_name] = formatted
+
+                output_path = Path(out_dir) / f"unions_output_{group_name}.json"
+                with open(output_path, "w") as f:
+                    json.dump(formatted_unions, f, indent=2)
+                print(f"\n✅ Union data for {group_name} saved to: {output_path}")
+                print(formatted_unions)
+
+                save_each_blob_as_individual_scan(formatted_unions, out_dir)
+
+                print("Perform fine scan now")
+                headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
+
+            if tiff_paths:
+                group_blobs_for_all_elements = {}
+                for i, element in enumerate(elem_list):
+                    if i >= len(COLOR_ORDER): break
+                    original_color = element_to_color.get(element)
+                    if original_color and original_color in precomputed_blobs:
+                        new_color = COLOR_ORDER[i]
+                        group_blobs_for_all_elements[new_color] = precomputed_blobs[original_color]
+
+                create_rgb_tiff(tiff_paths, out_dir, elem_list, group_name)
+                create_all_elements_tiff(tiff_paths, out_dir, elem_list, group_blobs_for_all_elements, group_name)
 
     print("done") 
     print("[DONE] all exports complete.")
