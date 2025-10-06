@@ -832,7 +832,7 @@ def normalize_and_dilate(img):
         print("[normalize_and_dilate] Skipped — no signal detected (entropy+pnr+edges)")
         return np.zeros_like(img, dtype=np.uint8), np.zeros_like(img, dtype=np.uint8)
     norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    dilated = cv2.dilate(norm, np.ones((3, 3), np.uint8), iterations=2)
+    dilated = cv2.dilate(norm, np.ones((5, 5), np.uint8), iterations=3)
     return norm, dilated
 
 def boxes_intersect(b1, b2):
@@ -844,22 +844,24 @@ def boxes_intersect(b1, b2):
 
     return not (x1_max < x2_min or x1_min > x2_max or y1_max < y2_min or y1_min > y2_max)
 
-def union_box_dimensions(b1, b2, b3):
+def union_box_dimensions(*blobs):
     """
-    Computes the union box of three blobs using their box_x, box_y, and box_size.
+    Computes the union box of multiple blobs using their box_x, box_y, and box_size.
     The union box is defined by the min bottom-left and max top-right corners.
     Returns:
         center (tuple): (x, y) of union box center
         length (float): side length of union box
         area (float): area of union box
     """
+    if not blobs:
+        return (0, 0), 0.0, 0.0
     # bottom-left corners
-    bl_x = [b1['box_x'], b2['box_x'], b3['box_x']]
-    bl_y = [b1['box_y'], b2['box_y'], b3['box_y']]
+    bl_x = [b['box_x'] for b in blobs]
+    bl_y = [b['box_y'] for b in blobs]
    
     # top-right corners
-    tr_x = [b1['box_x'] + b1['box_size'], b2['box_x'] + b2['box_size'], b3['box_x'] + b3['box_size']]
-    tr_y = [b1['box_y'] + b1['box_size'], b2['box_y'] + b2['box_size'], b3['box_y'] + b3['box_size']]
+    tr_x = [b['box_x'] + b['box_size'] for b in blobs]
+    tr_y = [b['box_y'] + b['box_size'] for b in blobs]
    
     # union box bounds
     min_x = min(bl_x)
@@ -880,12 +882,12 @@ def union_box_dimensions(b1, b2, b3):
     return (center_x, center_y), float(length), float(area)
 
 
-def union_center(b1, b2, b3):
+def union_center(*blobs):
     """
-    Computes the center of the union box of three blobs.
+    Computes the center of the union box of multiple blobs.
     Uses the union_box_dimensions function to avoid repeating logic.
     """
-    center, _, _ = union_box_dimensions(b1, b2, b3)
+    center, _, _ = union_box_dimensions(*blobs)
     return center
 
 def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origin_x, true_origin_y):
@@ -901,55 +903,65 @@ def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origi
     greens = blobs_by_color.get('green', [])
     blues = blobs_by_color.get('blue', [])
 
-    for r in reds:
-        for g in greens:
-            if not boxes_intersect(r, g):
-                continue
-            for b in blues:
-                if boxes_intersect(r, b) and boxes_intersect(g, b):
-                    cx, cy = union_center(r, g, b)
-                    _, length, area = union_box_dimensions(r, g, b)
-                    top_left_x = cx - length // 2
-                    top_left_y = cy - length // 2
-                    bottom_right_x = top_left_x + length
-                    bottom_right_y = top_left_y + length
+    def create_union_obj(blobs_to_union):
+        nonlocal union_index
+        cx, cy = union_center(*blobs_to_union)
+        _, length, area = union_box_dimensions(*blobs_to_union)
+        top_left_x = cx - length // 2
+        top_left_y = cy - length // 2
+        bottom_right_x = top_left_x + length
+        bottom_right_y = top_left_y + length
 
-                    real_cx = (cx * microns_per_pixel_x) + true_origin_x
-                    real_cy = (cy * microns_per_pixel_y) + true_origin_y
-                    real_length_x = length * microns_per_pixel_x
-                    real_length_y = length * microns_per_pixel_y
-                    real_area = real_length_x * real_length_y
+        real_cx = (cx * microns_per_pixel_x) + true_origin_x
+        real_cy = (cy * microns_per_pixel_y) + true_origin_y
+        real_length_x = length * microns_per_pixel_x
+        real_length_y = length * microns_per_pixel_y
+        real_area = real_length_x * real_length_y
 
-                    real_top_left = (
-                        (top_left_x * microns_per_pixel_x) + true_origin_x,
-                        (top_left_y * microns_per_pixel_y) + true_origin_y
-                    )
-                    real_bottom_right = (
-                        (bottom_right_x * microns_per_pixel_x) + true_origin_x,
-                        (bottom_right_y * microns_per_pixel_y) + true_origin_y
-                    )
+        real_top_left = (
+            (top_left_x * microns_per_pixel_x) + true_origin_x,
+            (top_left_y * microns_per_pixel_y) + true_origin_y
+        )
+        real_bottom_right = (
+            (bottom_right_x * microns_per_pixel_x) + true_origin_x,
+            (bottom_right_y * microns_per_pixel_y) + true_origin_y
+        )
 
-                    union_obj = {
-                        # Original fields (used by formatter)
-                        'center': [cx, cy],
-                        'length': length,
-                        'area': area,
+        union_obj = {
+            # Original fields (used by formatter)
+            'center': [cx, cy],
+            'length': length,
+            'area': area,
 
-                        # Alias for compatibility with merge logic
-                        'image_center': [cx, cy],
-                        'image_length': length,
-                        'image_area_px²': area,
+            # Alias for compatibility with merge logic
+            'image_center': [cx, cy],
+            'image_length': length,
+            'image_area_px²': area,
 
-                        # Real-world
-                        'real_center_um': [real_cx, real_cy],
-                        'real_size_um': [real_length_x, real_length_y],
-                        'real_area_um\u00b2': real_area,
-                        'real_top_left_um': list(real_top_left),
-                        'real_bottom_right_um': list(real_bottom_right),
-                    }
+            # Real-world
+            'real_center_um': [real_cx, real_cy],
+            'real_size_um': [real_length_x, real_length_y],
+            'real_area_um\u00b2': real_area,
+            'real_top_left_um': list(real_top_left),
+            'real_bottom_right_um': list(real_bottom_right),
+        }
 
-                    union_objects[union_index] = union_obj
-                    union_index += 1
+        union_objects[union_index] = union_obj
+        union_index += 1
+
+    if reds and greens and blues:
+        for r in reds:
+            for g in greens:
+                if not boxes_intersect(r, g):
+                    continue
+                for b in blues:
+                    if boxes_intersect(r, b) and boxes_intersect(g, b):
+                        create_union_obj([r, g, b])
+    elif reds and greens:
+        for r in reds:
+            for g in greens:
+                if boxes_intersect(r, g):
+                    create_union_obj([r, g])
 
     return union_objects
 
@@ -1542,6 +1554,67 @@ def submit_and_export(**params):
 
             print("Perform fine scan now")
             headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
+        
+        elif len(group_blobs_for_union) == 1:
+                    element_name = elem_list[0]
+                    print(f"Processing single element: {element_name}")
+                    
+                    # There's only one color, so just get the first item
+                    color, blob_data = next(iter(group_blobs_for_union.items()))
+                    
+                    formatted_blobs = {}
+                    blob_index = 1
+                    
+                    for (thresh, area), blobs in blob_data.items():
+                        for blob in blobs:
+                            cx, cy = blob['center']
+                            length = blob['box_size']
+                            area = length * length
+                            top_left_x = blob['box_x']
+                            top_left_y = blob['box_y']
+                            bottom_right_x = top_left_x + length
+                            bottom_right_y = top_left_y + length
+
+                            real_cx = (cx * microns_per_pixel_x) + true_origin_x
+                            real_cy = (cy * microns_per_pixel_y) + true_origin_y
+                            real_length_x = length * microns_per_pixel_x
+                            real_length_y = length * microns_per_pixel_y
+                            real_area = real_length_x * real_length_y
+
+                            real_top_left = (
+                                (top_left_x * microns_per_pixel_x) + true_origin_x,
+                                (top_left_y * microns_per_pixel_y) + true_origin_y
+                            )
+                            real_bottom_right = (
+                                (bottom_right_x * microns_per_pixel_x) + true_origin_x,
+                                (bottom_right_y * microns_per_pixel_y) + true_origin_y
+                            )
+
+                            box_name = f"Blob {element_name} #{blob_index}"
+                            formatted = {
+                                "text": box_name,
+                                "image_center": [cx, cy],
+                                "image_length": length,
+                                "image_area_px²": area,
+                                "real_center_um": [real_cx, real_cy],
+                                "real_size_um": [real_length_x, real_length_y],
+                                "real_area_um²": real_area,
+                                "real_top_left_um": list(real_top_left),
+                                "real_bottom_right_um": list(real_bottom_right)
+                            }
+                            formatted_blobs[box_name] = formatted
+                            blob_index += 1
+
+                    if formatted_blobs:
+                        output_path = Path(out_dir) / f"unions_output_{group_name}.json"
+                        with open(output_path, "w") as f:
+                            json.dump(formatted_blobs, f, indent=2)
+                        print(f"\n✅ Blob data for {group_name} saved to: {output_path}")
+
+                        save_each_blob_as_individual_scan(formatted_blobs, out_dir)
+
+                        print("Perform fine scan now")
+                        headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
 
         if tiff_paths:
             group_blobs_for_all_elements = {}
