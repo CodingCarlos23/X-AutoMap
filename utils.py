@@ -131,19 +131,28 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
             data = json.load(f)
 
         for label, info in data.items():
+            time.sleep(1)
             cx = info["cx"]
             cy = info["cy"] 
             sx = info["num_x"]
             sy = info["num_y"]
 
-            # Define relative scan range around center
-            x_start = -sx / 2
-            x_end = sx / 2
-            y_start = -sy / 2
-            y_end = sy / 2
+            # Expand scan size by 25% for padding
+            pad_ratio = beamline_params.get("fine_scan_pad_ratio", 0.25)
+            sx_padded = sx * (1 + pad_ratio)
+            sy_padded = sy * (1 + pad_ratio)
 
-            num_steps_x = int(sx / (step_size)) # Set x_motor to num_steps_x
-            num_steps_y = int(sy / (step_size))
+            # Define relative scan range around center
+            x_start = -sx_padded / 2
+            x_end   =  sx_padded / 2
+            y_start = -sy_padded / 2
+            y_end   =  sy_padded / 2
+
+            # Step counts based on padded size
+            num_steps_x = int(sx_padded / step_size)
+            num_steps_y = int(sy_padded / step_size)
+
+            # ROI still centered on original center
             roi = {x_motor: cx, y_motor: cy}
 
             # Detector names
@@ -191,7 +200,7 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
         print(f"Scan from {filename} completed") 
         print()
     print("Fine scan sent")
-    time.sleep(2)
+    # time.sleep(2)
     # RM.queue_start()
 
 def create_rgb_tiff(tiff_paths, output_dir, element_list, group_name=None):
@@ -800,7 +809,7 @@ def is_featureless(img):
 
 
 
-def normalize_and_dilate_(img, kernel_size=(3, 3), iterations=2, blur_kernel=(3, 3),):
+def normalize_and_dilate_(img, kernel_size=(3, 3), iterations=3, blur_kernel=(3, 3),):
     img = np.nan_to_num(img)
 
     if is_featureless(img):
@@ -823,7 +832,7 @@ def normalize_and_dilate(img):
         print("[normalize_and_dilate] Skipped — no signal detected (entropy+pnr+edges)")
         return np.zeros_like(img, dtype=np.uint8), np.zeros_like(img, dtype=np.uint8)
     norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    dilated = cv2.dilate(norm, np.ones((5, 5), np.uint8), iterations=3)
+    dilated = cv2.dilate(norm, np.ones((3, 3), np.uint8), iterations=2)
     return norm, dilated
 
 def boxes_intersect(b1, b2):
@@ -835,52 +844,49 @@ def boxes_intersect(b1, b2):
 
     return not (x1_max < x2_min or x1_min > x2_max or y1_max < y2_min or y1_min > y2_max)
 
-def union_center(b1, b2, b3):
-    x_vals = [b1['center'][0], b2['center'][0], b3['center'][0]]
-    y_vals = [b1['center'][1], b2['center'][1], b3['center'][1]]
-    return (sum(x_vals) / 3, sum(y_vals) / 3)
-
 def union_box_dimensions(b1, b2, b3):
-    xs = [b1['box_x'], b2['box_x'], b3['box_x']]
-    ys = [b1['box_y'], b2['box_y'], b3['box_y']]
-    sizes = [b1['box_size'], b2['box_size'], b3['box_size']]
-
-    min_x = min(xs)
-    min_y = min(ys)
-    max_x = max(x + s for x, s in zip(xs, sizes))
-    max_y = max(y + s for y, s in zip(ys, sizes))
-
+    """
+    Computes the union box of three blobs using their box_x, box_y, and box_size.
+    The union box is defined by the min bottom-left and max top-right corners.
+    Returns:
+        center (tuple): (x, y) of union box center
+        length (float): side length of union box
+        area (float): area of union box
+    """
+    # bottom-left corners
+    bl_x = [b1['box_x'], b2['box_x'], b3['box_x']]
+    bl_y = [b1['box_y'], b2['box_y'], b3['box_y']]
+   
+    # top-right corners
+    tr_x = [b1['box_x'] + b1['box_size'], b2['box_x'] + b2['box_size'], b3['box_x'] + b3['box_size']]
+    tr_y = [b1['box_y'] + b1['box_size'], b2['box_y'] + b2['box_size'], b3['box_y'] + b3['box_size']]
+   
+    # union box bounds
+    min_x = min(bl_x)
+    min_y = min(bl_y)
+    max_x = max(tr_x)
+    max_y = max(tr_y)
+   
+    # center of union box
+    center_x = (min_x + max_x) / 2
+    center_y = (min_y + max_y) / 2
+   
+    # side length and area
     width = max_x - min_x
     height = max_y - min_y
-
-    length = max(width, height)  # square side length
+    length = max(width, height)  # make it square
     area = length * length
+   
+    return (center_x, center_y), float(length), float(area)
 
-    return float(length), float(area)
-    
+
 def union_center(b1, b2, b3):
-    x_vals = [b1['center'][0], b2['center'][0], b3['center'][0]]
-    y_vals = [b1['center'][1], b2['center'][1], b3['center'][1]]
-    return (sum(x_vals) / 3, sum(y_vals) / 3)
-
-def union_box_dimensions(b1, b2, b3):
-    xs = [b1['box_x'], b2['box_x'], b3['box_x']]
-    ys = [b1['box_y'], b2['box_y'], b3['box_y']]
-    sizes = [b1['box_size'], b2['box_size'], b3['box_size']]
-
-    min_x = min(xs)
-    min_y = min(ys)
-    max_x = max(x + s for x, s in zip(xs, sizes))
-    max_y = max(y + s for y, s in zip(ys, sizes))
-
-    width = max_x - min_x
-    height = max_y - min_y
-
-    length = max(width, height)  # square side length
-    area = length * length
-
-    return float(length), float(area)
-
+    """
+    Computes the center of the union box of three blobs.
+    Uses the union_box_dimensions function to avoid repeating logic.
+    """
+    center, _, _ = union_box_dimensions(b1, b2, b3)
+    return center
 
 def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origin_x, true_origin_y):
     blobs_by_color = {color: [] for color in blobs}
@@ -902,7 +908,7 @@ def find_union_blobs(blobs, microns_per_pixel_x, microns_per_pixel_y, true_origi
             for b in blues:
                 if boxes_intersect(r, b) and boxes_intersect(g, b):
                     cx, cy = union_center(r, g, b)
-                    length, area = union_box_dimensions(r, g, b)
+                    _, length, area = union_box_dimensions(r, g, b)
                     top_left_x = cx - length // 2
                     top_left_y = cy - length // 2
                     bottom_right_x = top_left_x + length
@@ -1301,18 +1307,48 @@ def send_fly2d_to_queue(label,
                           ))
     print("Coarse scan done")
 
-def wait_for_queue_done(poll_interval=5.0):
+def wait_for_queue_done(poll_interval=5.0, idle_timeout=60, auto_restart=True):
     """
-    Block until the QServer queue is empty and the manager goes idle.
+    Wait until QServer queue is empty and manager is idle.
+    Optionally restart the queue if stuck in idle with items remaining.
+
+    Args:
+        poll_interval (float): Seconds between polls.
+        idle_timeout (float): How long to wait in idle with items before triggering restart.
+        auto_restart (bool): If True, will automatically call RM.start_queue() after timeout.
     """
+    import time
+
     print("[WAIT] polling queue status...", end="", flush=True)
-    # while True:
-    #     st = RM.status()
-    #     if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-    #         print(" done.")
-    #         return
-    #     print(".", end="", flush=True)
-    #     time.sleep(poll_interval)
+    idle_stuck_start = None
+
+    while True:
+        st = RM.status()
+        items = st.get("items_in_queue", 0)
+        state = st.get("manager_state", "")
+
+        if items == 0 and state == "idle":
+            print(" done.")
+            return
+
+        if items > 0 and state == "idle":
+            if idle_stuck_start is None:
+                idle_stuck_start = time.time()
+            elif time.time() - idle_stuck_start > idle_timeout:
+                if auto_restart:
+                    print("\n⚠️ Queue is idle with items still in queue.")
+                    print("🔁 Automatically restarting queue with RM.start_queue()...")
+                    RM.start_queue()
+                else:
+                    print("\n⚠️ Queue is idle with items still in queue.")
+                    print("🔁 Consider running: RM.start_queue() to resume.")
+                return
+        else:
+            idle_stuck_start = None  # reset if queue becomes active again
+
+        print(".", end="", flush=True)
+        time.sleep(poll_interval)
+
 
 
 def submit_and_export(**params):
@@ -1331,7 +1367,7 @@ def submit_and_export(**params):
     print(f" check 1")
     print(f" {clean_params = }")
 
-    time.sleep(3)
+    time.sleep(5)
 
     send_fly2d_to_queue(**clean_params)
     
@@ -1360,14 +1396,18 @@ def submit_and_export(**params):
 
     print(f"ID being used {last_id}")
 
-    # 4) export XRF TIFFs
-    export_xrf_roi_data(
-        last_id,
-        norm=params.get('export_norm', 'sclr1_ch4'),
-        elem_list=params.get('elem_list', []),
-        wd=out_dir,
-        real_test=params.get('real_test', 0)
-    )
+    all_elem_list = params.get('elem_list', [])
+
+    for elem_list in all_elem_list:
+
+        # 4) export XRF TIFFs
+        export_xrf_roi_data(
+            last_id,
+            norm=params.get('export_norm', 'sclr1_ch4'),
+            elem_list=elem_list,
+            wd=out_dir,
+            real_test=params.get('real_test', 0)
+        )
 
     # 5) export scan parameters JSON
     export_scan_params(
@@ -1446,182 +1486,88 @@ def submit_and_export(**params):
             print(f"❌ Error processing {tiff_path.name}: {e}")
             trackback.print_exc()
 
+    for elem_list in elem_list_of_lists:
+        group_name = "".join(elem_list)
+        print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
 
-    #0 means union scans are sent for high res
-    #1 means individual scans are sent for high res
-    send_individual_scan = params.get("send_individual_scan", 0)
+        group_blobs_for_union = {}
+        for i, element in enumerate(elem_list):
+            if i >= 3: # find_union_blobs supports 3 elements
+                print(f"Warning: element group has more than 3 elements. Only first 3 will be used for union: {elem_list}")
+                break
+            
+            original_color = element_to_color.get(element)
+            if not original_color or not precomputed_blobs.get(original_color):
+                print(f"Warning: No blobs found for element {element} in group {group_name}. Skipping it in union.")
+                continue
 
-    if send_individual_scan == 1:
-        print("--- Individual Scan Parameters ---")
-        
-        # Get beamline parameters from the main params dict
-        dets = params.get("det_name", "dets_fast")
-        x_motor = params.get("mot1", "zpssx")
-        y_motor = params.get("mot2", "zpssy")
-        exp_t = params.get("exp_t", 0.01)
-        step_size = params.get("step_size_fine", 100)
-        real_test = params.get('real_test', 0)
+            new_color = ['red', 'green', 'blue'][i]
+            group_blobs_for_union[new_color] = precomputed_blobs[original_color]
 
-        # First, calculate real-world coordinates for all blobs
-        for color in precomputed_blobs:
-            for (thresh, area), blobs in precomputed_blobs[color].items():
-                for blob in blobs:
-                    cx, cy = blob['center']
-                    length = blob['box_size']
-                    top_left_x = blob['box_x']
-                    top_left_y = blob['box_y']
-                    bottom_right_x = top_left_x + length
-                    bottom_right_y = top_left_y + length
+        if len(group_blobs_for_union) >= 2:
+            unions = find_union_blobs(
+                group_blobs_for_union,
+                microns_per_pixel_x,
+                microns_per_pixel_y,
+                true_origin_x,
+                true_origin_y
+            )
 
-                    real_cx = (cx * microns_per_pixel_x) + true_origin_x
-                    real_cy = (cy * microns_per_pixel_y) + true_origin_y
-                    real_length_x = length * microns_per_pixel_x
-                    real_length_y = length * microns_per_pixel_y
-                    real_area = real_length_x * real_length_y
+            unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
 
-                    real_top_left = (
-                        (top_left_x * microns_per_pixel_x) + true_origin_x,
-                        (top_left_y * microns_per_pixel_y) + true_origin_y
-                    )
-                    real_bottom_right = (
-                        (bottom_right_x * microns_per_pixel_x) + true_origin_x,
-                        (bottom_right_y * microns_per_pixel_y) + true_origin_y
-                    )
-                    
-                    blob['real_center_um'] = [real_cx, real_cy]
-                    blob['real_size_um'] = [real_length_x, real_length_y]
-                    blob['real_area_um²'] = real_area
-                    blob['real_top_left_um'] = list(real_top_left)
-                    blob['real_bottom_right_um'] = list(real_bottom_right)
+            formatted_unions = {}
+            print("Processing images now")
+            for idx, union in unions.items():
+                box_name = f"Union Box {group_name} #{idx.split('#')[-1].strip()}"
+                formatted = {
+                    "text": box_name,
+                    "image_center": union["center"],
+                    "image_length": union["length"],
+                    "image_area_px²": union["area"],
+                    "real_center_um": union["real_center_um"],
+                    "real_size_um": union["real_size_um"],
+                    "real_area_um²": union["real_area_um\u00b2"],
+                    "real_top_left_um": union["real_top_left_um"],
+                    "real_bottom_right_um": union["real_bottom_right_um"]
+                }
+                formatted_unions[box_name] = formatted
 
-        # Now, iterate again and print the formatted output
-        for color in precomputed_blobs:
-            for (thresh, area), blobs in precomputed_blobs[color].items():
-                for blob in blobs:
-                    label = blob['Box']
-                    cx = blob['real_center_um'][0]
-                    cy = blob['real_center_um'][1]
-                    sx = blob['real_size_um'][0]
-                    sy = blob['real_size_um'][1]
+            output_path = Path(out_dir) / f"unions_output_{group_name}.json"
+            with open(output_path, "w") as f:
+                json.dump(formatted_unions, f, indent=2)
+            print(f"\n✅ Union data for {group_name} saved to: {output_path}")
+            #print(formatted_unions)
 
-                    # Define relative scan range around center
-                    x_start = -sx / 2
-                    x_end = sx / 2
-                    y_start = -sy / 2
-                    y_end = sy / 2
+            save_each_blob_as_individual_scan(formatted_unions, out_dir)
 
-                    num_steps_x = int(sx / step_size) if step_size > 0 else 0
-                    num_steps_y = int(sy / step_size) if step_size > 0 else 0
-                    roi = {x_motor: cx, y_motor: cy}
+            print("Perform fine scan now")
+            headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
 
-                    if real_test == 1:
-                        RM.item_add(BPlan(
-                            "recover_pos_and_scan",
-                            label,
-                            roi,
-                            dets,
-                            x_motor,
-                            x_start,
-                            x_end,
-                            num_steps_x,
-                            y_motor,
-                            y_start,
-                            y_end,
-                            num_steps_y,
-                            exp_t,
-                            step_size
-                        ))
-
-                    print(f"Scan Parameters for: {label}")
-                    print("BPlan: recover_pos_and_scan")
-                    print(f"label: {label}")
-                    print(f"roi: {roi}")
-                    print(f"dets: {dets}")
-                    print(f"x_motor: {x_motor}")
-                    print(f"x_start: {x_start}")
-                    print(f"x_end: {x_end}")
-                    print(f"num_steps_x: {num_steps_x}")
-                    print(f"y_motor: {y_motor}")
-                    print(f"y_start: {y_start}")
-                    print(f"y_end: {y_end}")
-                    print(f"num_steps_y: {num_steps_y}")
-                    print(f"exp_t: {exp_t}")
-                    print(f"step_size: {step_size}")
-                    print("------------------------\n")
-    else:
-        for elem_list in elem_list_of_lists:
-            group_name = "".join(elem_list)
-            print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
-
-            group_blobs_for_union = {}
+        if tiff_paths:
+            group_blobs_for_all_elements = {}
             for i, element in enumerate(elem_list):
-                if i >= 3: # find_union_blobs supports 3 elements
-                    print(f"Warning: element group has more than 3 elements. Only first 3 will be used for union: {elem_list}")
-                    break
-                
+                if i >= len(COLOR_ORDER): break
                 original_color = element_to_color.get(element)
-                if not original_color or not precomputed_blobs.get(original_color):
-                    print(f"Warning: No blobs found for element {element} in group {group_name}. Skipping it in union.")
-                    continue
+                if original_color and original_color in precomputed_blobs:
+                    new_color = COLOR_ORDER[i]
+                    group_blobs_for_all_elements[new_color] = precomputed_blobs[original_color]
 
-                new_color = ['red', 'green', 'blue'][i]
-                group_blobs_for_union[new_color] = precomputed_blobs[original_color]
-
-            if len(group_blobs_for_union) >= 2:
-                unions = find_union_blobs(
-                    group_blobs_for_union,
-                    microns_per_pixel_x,
-                    microns_per_pixel_y,
-                    true_origin_x,
-                    true_origin_y
-                )
-
-                unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
-
-                formatted_unions = {}
-                print("Processing images now")
-                for idx, union in unions.items():
-                    box_name = f"Union Box {group_name} #{idx.split('#')[-1].strip()}"
-                    formatted = {
-                        "text": box_name,
-                        "image_center": union["center"],
-                        "image_length": union["length"],
-                        "image_area_px²": union["area"],
-                        "real_center_um": union["real_center_um"],
-                        "real_size_um": union["real_size_um"],
-                        "real_area_um²": union["real_area_um\u00b2"],
-                        "real_top_left_um": union["real_top_left_um"],
-                        "real_bottom_right_um": union["real_bottom_right_um"]
-                    }
-                    formatted_unions[box_name] = formatted
-
-                output_path = Path(out_dir) / f"unions_output_{group_name}.json"
-                with open(output_path, "w") as f:
-                    json.dump(formatted_unions, f, indent=2)
-                print(f"\n✅ Union data for {group_name} saved to: {output_path}")
-                print(formatted_unions)
-
-                save_each_blob_as_individual_scan(formatted_unions, out_dir)
-
-                print("Perform fine scan now")
-                headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
-
-            if tiff_paths:
-                group_blobs_for_all_elements = {}
-                for i, element in enumerate(elem_list):
-                    if i >= len(COLOR_ORDER): break
-                    original_color = element_to_color.get(element)
-                    if original_color and original_color in precomputed_blobs:
-                        new_color = COLOR_ORDER[i]
-                        group_blobs_for_all_elements[new_color] = precomputed_blobs[original_color]
-
-                create_rgb_tiff(tiff_paths, out_dir, elem_list, group_name)
-                create_all_elements_tiff(tiff_paths, out_dir, elem_list, group_blobs_for_all_elements, group_name)
+            create_rgb_tiff(tiff_paths, out_dir, elem_list, group_name)
+            create_all_elements_tiff(tiff_paths, out_dir, elem_list, group_blobs_for_all_elements, group_name)
+    
 
     print("done") 
     print("[DONE] all exports complete.")
     time.sleep(2)
-    wait_for_queue_done()
+
+    # st = RM.status()
+    # if st['items_in_queue'] != 0 and st['manager_state'] == 'idle':
+
+    #     RM.queue_start()
+    #     print('[QSERVER] queue started')
+
+    # else: print('[QSERVER] queue waiting')
+    # wait_for_queue_done()
 
 
 def load_and_queue(json_path, real_test):
