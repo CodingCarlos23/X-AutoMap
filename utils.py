@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import tifffile as tiff
 
-# make if else for rea_state
+# make if else for real_state
 try:
     from bluesky_queueserver_api import BPlan
     from bluesky_queueserver_api.zmq import REManagerAPI
@@ -178,8 +178,6 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
                 ))
 
             print(f"prev ROI: {roi}")
-            print()
-
             print(f"Fine Scan to Queue server {filename}")
             print("BPlan: recover_pos_and_scan")
             print(f"label: {label}")
@@ -195,11 +193,11 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
             print(f"num_steps_y: {num_steps_y}")
             print(f"exp_t: {exp_t}")
             print(f"step_size: {step_size}")
-            print("------------------------\n")
+            # print("------------------------")
 
         print(f"Scan from {filename} completed") 
         print()
-    print("Fine scan sent")
+    print("Fine scan sent\n")
     # time.sleep(2)
     # RM.queue_start()
 
@@ -1298,7 +1296,7 @@ def send_fly2d_to_queue(label,
     elif isinstance(roi_positions, str):
         roi_json = roi_positions
 
-    print("Coarse scan")
+    print("Performing Coarse scan")
     if real_test == 1:
         RM.item_execute(BPlan("fly2d_qserver_scan_export",
                           label,
@@ -1317,7 +1315,7 @@ def send_fly2d_to_queue(label,
                           pos_save_to or ""#,
                         #   real_test
                           ))
-    print("Coarse scan done")
+    print("Coarse scan done\n")
 
 def wait_for_queue_done(poll_interval=5.0, idle_timeout=60, auto_restart=True):
     """
@@ -1373,11 +1371,12 @@ def submit_and_export(**params):
     print(f"[SUBMIT] queueing scan '{label}' …")
 
     print(f"{params = }")
+    print()
 
     valid_keys = inspect.signature(send_fly2d_to_queue).parameters.keys()
     clean_params = {k: v for k, v in params.items() if k in valid_keys}
-    print(f" check 1")
     print(f" {clean_params = }")
+    print()
 
     time.sleep(5)
 
@@ -1500,7 +1499,12 @@ def submit_and_export(**params):
 
     for elem_list in elem_list_of_lists:
         group_name = "".join(elem_list)
+        
+        group_dir = os.path.join(out_dir, group_name)
+        os.makedirs(group_dir, exist_ok=True)
+
         print(f"\n--- Processing element group: {group_name} ({elem_list}) ---")
+        print(f"Group output directory: {group_dir}")
 
         group_blobs_for_union = {}
         for i, element in enumerate(elem_list):
@@ -1528,7 +1532,6 @@ def submit_and_export(**params):
             unions = merge_overlapping_boxes_dict(unions, overlap_thresh=0.5)
 
             formatted_unions = {}
-            print("Processing images now")
             for idx, union in unions.items():
                 box_name = f"Union Box {group_name} #{idx.split('#')[-1].strip()}"
                 formatted = {
@@ -1544,16 +1547,16 @@ def submit_and_export(**params):
                 }
                 formatted_unions[box_name] = formatted
 
-            output_path = Path(out_dir) / f"unions_output_{group_name}.json"
+            output_path = Path(group_dir) / f"unions_output_{group_name}.json"
             with open(output_path, "w") as f:
                 json.dump(formatted_unions, f, indent=2)
-            print(f"\n✅ Union data for {group_name} saved to: {output_path}")
+            print(f"\n✅ Union data for {group_name} saved to: {output_path}\n")
             #print(formatted_unions)
 
-            save_each_blob_as_individual_scan(formatted_unions, out_dir)
+            save_each_blob_as_individual_scan(formatted_unions, group_dir)
 
-            print("Perform fine scan now")
-            headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
+            print("Perform Fine scan now\n")
+            headless_send_queue_fine_scan(group_dir, params, last_id, params.get('real_test', 0))
         
         elif len(group_blobs_for_union) == 1:
                     element_name = elem_list[0]
@@ -1606,15 +1609,15 @@ def submit_and_export(**params):
                             blob_index += 1
 
                     if formatted_blobs:
-                        output_path = Path(out_dir) / f"unions_output_{group_name}.json"
+                        output_path = Path(group_dir) / f"unions_output_{group_name}.json"
                         with open(output_path, "w") as f:
                             json.dump(formatted_blobs, f, indent=2)
-                        print(f"\n✅ Blob data for {group_name} saved to: {output_path}")
+                        print(f"\n✅ Blob data for {group_name} saved to: {output_path}\n")
 
-                        save_each_blob_as_individual_scan(formatted_blobs, out_dir)
+                        save_each_blob_as_individual_scan(formatted_blobs, group_dir)
 
-                        print("Perform fine scan now")
-                        headless_send_queue_fine_scan(out_dir, params, last_id, params.get('real_test', 0))
+                        print("Perform fine scan now\n")
+                        headless_send_queue_fine_scan(group_dir, params, last_id, params.get('real_test', 0))
 
         if tiff_paths:
             group_blobs_for_all_elements = {}
@@ -1625,11 +1628,10 @@ def submit_and_export(**params):
                     new_color = COLOR_ORDER[i]
                     group_blobs_for_all_elements[new_color] = precomputed_blobs[original_color]
 
-            create_rgb_tiff(tiff_paths, out_dir, elem_list, group_name)
-            create_all_elements_tiff(tiff_paths, out_dir, elem_list, group_blobs_for_all_elements, group_name)
+            create_rgb_tiff(tiff_paths, group_dir, elem_list, group_name)
+            create_all_elements_tiff(tiff_paths, group_dir, elem_list, group_blobs_for_all_elements, group_name)
     
 
-    print("done") 
     print("[DONE] all exports complete.")
     time.sleep(2)
 
