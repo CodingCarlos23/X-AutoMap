@@ -203,29 +203,42 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
 
 def create_rgb_tiff(tiff_paths, output_dir, element_list, group_name=None):
     """
-    Merges the first three element TIFFs into a single RGB TIFF file,
+    Merges the first two or three element TIFFs into a single RGB TIFF file,
     and draws the union boxes on it.
     """
-    if len(element_list) < 3:
-        print("⚠️ Not enough elements to create an RGB TIFF (need at least 3).")
+    if len(element_list) < 2:
+        print("⚠️ Not enough elements to create an RGB TIFF (need at least 2).")
         return
 
-    rgb_elements = element_list[:3]
-    print(f"Creating RGB TIFF from elements (R, G, B): {rgb_elements[0]}, {rgb_elements[1]}, {rgb_elements[2]}")
-
     try:
-        # Read the three images
-        img_r = tiff.imread(tiff_paths[rgb_elements[0]])
-        img_g = tiff.imread(tiff_paths[rgb_elements[1]])
-        img_b = tiff.imread(tiff_paths[rgb_elements[2]])
+        # Determine a consistent shape from the first element's tiff
+        first_element = element_list[0]
+        first_path = tiff_paths.get(first_element)
+        if not first_path:
+            print(f"⚠️ Cannot find TIFF for base element {first_element}.")
+            return
+        
+        base_img = tiff.imread(first_path)
+        target_shape = base_img.shape
 
-        # Determine target shape and resize if needed
-        shapes = [img.shape for img in (img_r, img_g, img_b)]
-        target_shape = Counter(shapes).most_common(1)[0][0]
+        # Prepare channels based on number of elements
+        if len(element_list) >= 3:
+            elements_to_use = element_list[:3]
+            print(f"Creating RGB TIFF from elements (R, G, B): {', '.join(elements_to_use)}")
+            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
+            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
+            img_b = tiff.imread(tiff_paths[elements_to_use[2]])
+        else: # 2 elements
+            elements_to_use = element_list[:2]
+            print(f"Creating RG TIFF from elements (R, G): {', '.join(elements_to_use)}")
+            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
+            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
+            img_b = np.zeros(target_shape, dtype=base_img.dtype)
 
-        img_r = resize_if_needed(img_r, rgb_elements[0], target_shape)
-        img_g = resize_if_needed(img_g, rgb_elements[1], target_shape)
-        img_b = resize_if_needed(img_b, rgb_elements[2], target_shape)
+        # Resize all to target shape
+        img_r = resize_if_needed(img_r, 'R channel', target_shape)
+        img_g = resize_if_needed(img_g, 'G channel', target_shape)
+        img_b = resize_if_needed(img_b, 'B channel', target_shape)
 
         # Normalize each channel to 0-255
         norm_r = cv2.normalize(np.nan_to_num(img_r), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
