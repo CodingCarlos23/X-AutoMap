@@ -732,12 +732,15 @@ def first_scan_detect_blobs():
         print(f"{COLOR_ORDER[idx].capitalize()}: {fname}")
 
     # --- STEP 4: Process TIFF files ---
+    params_dict = {item[0]: item[1] for item in json_items if isinstance(item, list) and len(item) == 2}
+    dilation_size = int(params_dict.get("dialaiton_size", 5))
+    dilation_iterations = int(params_dict.get("dialation_iteration", 3))
     for idx, tiff_name in enumerate(selected_tiffs):
         color = COLOR_ORDER[idx]
         tiff_path = watch_dir / tiff_name
         try:
             tiff_img = tiff.imread(str(tiff_path)).astype(np.float32)
-            norm, dilated = normalize_and_dilate(tiff_img)
+            norm, dilated = normalize_and_dilate(tiff_img, dilation_size, dilation_iterations)
             threshold = json_items[0][1]
             min_area = json_items[1][1]
             blobs = detect_blobs(dilated, norm, threshold, min_area, color, tiff_name)
@@ -836,14 +839,15 @@ def normalize_and_dilate_(img, kernel_size=(3, 3), iterations=3, blur_kernel=(3,
     dilated = cv2.dilate(norm, kernel, iterations=iterations)
     return norm, dilated
 
-def normalize_and_dilate(img):
+def normalize_and_dilate(img, dilation_size=5, dilation_iterations=3):
     img = np.nan_to_num(img)
 
     if is_featureless(img):
         print("[normalize_and_dilate] Skipped — no signal detected (entropy+pnr+edges)")
         return np.zeros_like(img, dtype=np.uint8), np.zeros_like(img, dtype=np.uint8)
     norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    dilated = cv2.dilate(norm, np.ones((5, 5), np.uint8), iterations=3)
+    kernel = np.ones((dilation_size, dilation_size), np.uint8)
+    dilated = cv2.dilate(norm, kernel, iterations=dilation_iterations)
     return norm, dilated
 
 def boxes_intersect(b1, b2):
@@ -1475,6 +1479,8 @@ def submit_and_export(**params):
 
     min_thresh = params.get("min_threshold_intensity", "")
     min_area = params.get("min_threshold_area", "")
+    dilation_size = int(params.get("dialaiton_size", 5))
+    dilation_iterations = int(params.get("dialation_iteration", 3))
     microns_per_pixel_x = step_size
     microns_per_pixel_y = step_size
     true_origin_x = x_start
@@ -1496,7 +1502,7 @@ def submit_and_export(**params):
         print(f"Processing {tiff_path.name} for element {element} as color {color}")
         try:
             tiff_img = tiff.imread(str(tiff_path)).astype(np.float32)
-            tiff_norm, tiff_dilated = normalize_and_dilate(tiff_img)
+            tiff_norm, tiff_dilated = normalize_and_dilate(tiff_img, dilation_size, dilation_iterations)
             b = detect_blobs(
                 tiff_dilated,
                 tiff_norm,

@@ -19,6 +19,8 @@
   "pos_save_to":      "./data/user_macros",
   "min_threshold_intensity": 100,
   "min_threshold_area":200,
+  "dialaiton_size": 5,
+  "dialation_iteration": 3,
   "step_size_fine": 0.100,
   "exp_t_fine": 0.02,
   "analysis": true,
