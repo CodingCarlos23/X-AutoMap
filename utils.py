@@ -16,18 +16,15 @@ import cv2
 import numpy as np
 import tifffile as tiff
 
-# make if else for rea_state
-try:
-    from bluesky_queueserver_api import BPlan
-    from bluesky_queueserver_api.zmq import REManagerAPI
-    RM = REManagerAPI()
-except ImportError:
-    BPlan = None
-    REManagerAPI = None
-    RM = None
-    print("Warning: bluesky_queueserver_api not found. Bluesky-related functionality will be disabled.")
-    
-#  add the db into this here 
+from bluesky_queueserver_api import BPlan
+from bluesky_queueserver_api.zmq import REManagerAPI
+RM = REManagerAPI()
+
+sys.path.insert(0, '/nsls2/data2/hxn/shared/config/bluesky_overlay/2023-1.0-py310-tiled/lib/python3.10/site-packages')
+
+from hxntools.CompositeBroker import db
+from hxntools.scan_info import get_scan_positions
+
 
 from PyQt5.QtWidgets import (
     QApplication, QLabel, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout,
@@ -38,6 +35,67 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QRect, QTimer
+
+# import globals
+# from globals import update_boxes, union_box_drawer, get_current_blobs
+
+
+# def send_json_boxes_to_queue_with_center_move(json_file_path, dets="dets1", x_motor="zpssx", y_motor="zpssy", exp_t=0.01, px_per_um=1.25, file_save_path="data/gui_scans/queued_regions.json"):
+#     """
+#     For each region in the JSON file:
+#     - Move stage to real_center_um
+#     - Perform fly2d scan centered on that position
+#     """
+#     # Ensure the directory exists
+#     os.makedirs(os.path.dirname(file_save_path), exist_ok=True)
+
+#     with open(json_file_path, "r") as f:
+#         boxes = json.load(f)
+
+#     queued_data = {}
+
+#     for label, info in boxes.items():
+#         cx, cy = info["real_center_um"]         # center in um
+#         sx, sy = info["real_size_um"]           # size in um
+ 
+#         # Define relative scan range around center
+ 
+#         x_start = cx - sx / 2
+#         x_end = cx + sx / 2
+#         y_start = cy - sy / 2
+#         y_end = cy + sy / 2
+
+#         # # Detector names
+#         # det_names = [d.name for d in eval(dets)]
+ 
+#         # # Create ROI dictionary to move motors first
+#         # roi = {x_motor: cx, y_motor: cy}
+
+#         RM.item_add(BPlan(
+#             "recover_pos_and_scan",
+#             label,
+#             roi,
+#             det_names,
+#             x_motor,
+#             x_start,
+#             x_end,
+#             sx,
+#             y_motor,
+#             y_start,
+#             y_end,
+#             sy,
+#             exp_t
+#         ))
+
+#         # print(f"Queued: {label} | center ({cx:.1f}, {cy:.1f}) µm | size ({sx:.1f}, {sy:.1f}) µm")
+#         # Add to export dictionary
+#         queued_data[label] = {
+#             "center_um": [round(cx, 2), round(cy, 2)],
+#             "size_um": [round(sx, 2), round(sy, 2)],
+#         }
+#     # Save metadata to a JSON file
+#     with open(file_save_path, "w") as f_out:
+#         json.dump(queued_data, f_out, indent=4)
 
 def save_each_blob_as_individual_scan(json_safe_data, output_dir="scans"):
     output_dir = Path(output_dir)
@@ -65,7 +123,11 @@ def headless_send_queue_coarse_scan(beamline_params, coarse_scan_path, real_test
     Performs coarse scan using only parameters from beamline_params.
     The output directory path is constructed and can be used later.
     No JSON files are read in this function.
-    """ 
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+    filepath = output_dir  # This can be used later as needed
+
     dets = beamline_params.get("det_name", "dets_fast")
     x_motor = beamline_params.get("mot1", "zpssx")
     y_motor = beamline_params.get("mot2", "zpssy")
@@ -107,12 +169,14 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
     exp_t = beamline_params.get("exp_t", 0.01)
     step_size = beamline_params.get("step_size_fine", 100)
 
-    pattern = re.compile(r"scan_\d+_params\.json$")  # matches scan_123_params.json
+    pattern = re.compile(r"scan_\d+_params\.json$")
 
     for filename in os.listdir(directory_path):
         if not filename.endswith(".json"):
             continue
         if filename in ("unions_output.json", "union_blobs.json"):
+            continue
+        if pattern.match(filename):
             continue
         if pattern.match(filename):
             continue
@@ -141,42 +205,58 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
             # det_names = [d.name for d in eval(dets)]
             # Create ROI dictionary to move motors first
 
-            if real_test == 1:
-                RM.item_add(BPlan(
-                    "recover_pos_and_scan", #written
-                    label, #from folder of jsons
-                    roi, #calculated here
-                    dets, #from beamline_params
-                    x_motor, #from beamline_params
-                    x_start, #calculated here
-                    x_end, #calculated here
-                    num_steps_x, #calculated here
-                    y_motor, #from beamline_params
-                    y_start, #calculated here
-                    y_end, #calculate d here
-                    num_steps_y, #calculated here
-                    exp_t, #from beamline_params
-                    step_size #from json
-                ))
+            RM.item_add(BPlan(
+                "recover_pos_and_scan", #written
+                label, #from folder of jsons
+                roi, #calculated here
+                dets, #from beamline_params
+                x_motor, #from beamline_params
+                x_start, #calculated here
+                x_end, #calculated here
+                num_steps_x, #calculated here
+                y_motor, #from beamline_params
+                y_start, #calculated here
+                y_end, #calculate d here
+                num_steps_y, #calculated here
+                exp_t, #from beamline_params
+                step_size #from json
+            ))
 
-            print(f"prev ROI: {roi}")
-            print()
+            if scan_ID is not None:
+                roi = scan_ID
+            else:
+                roi = roi
 
-            print(f"Fine Scan to Queue server {filename}")
-            print("BPlan: recover_pos_and_scan")
-            print(f"label: {label}")
-            print(f"roi: {roi}")
-            print(f"dets: {dets}")
-            print(f"x_motor: {x_motor}")
-            print(f"x_start: {x_start}")
-            print(f"x_end: {x_end}")
-            print(f"num_steps_x: {num_steps_x}")
-            print(f"y_motor: {y_motor}")
-            print(f"y_start: {y_start}")
-            print(f"y_end: {y_end}")
-            print(f"num_steps_y: {num_steps_y}")
-            print(f"exp_t: {exp_t}")
-            print(f"step_size: {step_size}")
+            # RM.item_add(BPlan(
+            #     "recover_pos_from_SID_and_scan", #written
+            #     label, #from folder of jsons
+            #     roi, #calculated here
+            #     dets, #from beamline_params
+            #     x_motor, #from beamline_params
+            #     x_start, #calculated here
+            #     x_end, #calculated here
+            #     num_steps_x, #calculated here
+            #     y_motor, #from beamline_params
+            #     y_start, #calculated here
+            #     y_end, #calculate d here
+            #     num_steps_y, #calculated here
+            #     exp_t, #from beamline_params
+            #     step_size #from json
+            # ))
+
+            print("Fine Scan to Queue Server")
+            print("\n=== Scan Parameters for JSON: {} ===".format(filename))
+            print("recover_pos_and_scan")
+            print(f"Label: {label}")
+            print(f"ROI (region of interest): {roi}")
+            print(f"Detector name (dets): {dets}")
+            print(f"X motor: {x_motor} (mot1), mot1_n: {num_steps_x}")
+            print(f"Y motor: {y_motor} (mot2), mot2_n: {num_steps_y}")
+            print(f"Exposure time (exp_t): {exp_t}")
+            print(f"Step size: {step_size}")
+            print("--- Scan Ranges ---")
+            print(f"  X range: {x_start:.2f} to {x_end:.2f} µm")
+            print(f"  Y range: {y_start:.2f} to {y_end:.2f} µm")
             print("------------------------\n")
 
         print(f"Scan from {filename} completed") 
@@ -247,109 +327,6 @@ def create_rgb_tiff(tiff_paths, output_dir, element_list):
     except Exception as e:
         print(f"❌ An error occurred during RGB TIFF creation: {e}")
         trackback.print_exc()
-
-def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_blobs):
-    """
-    Creates a TIFF image with individual blob boxes for each element, named All_of_elements.tiff.
-    The base image is an RGB composite of the first up to 3 elements.
-    """
-    import traceback
-    from pathlib import Path
-    import tifffile as tiff
-    import numpy as np
-    import cv2
-
-    try:
-        # --- Create a base RGB image ---
-        if not element_list or not tiff_paths:
-            print("⚠️ Not enough elements or TIFF paths to create an image.")
-            return
-
-        # Determine a consistent shape from the first element's tiff
-        first_element = element_list[0]
-        first_path = tiff_paths.get(first_element)
-        if not first_path:
-            print(f"⚠️ Cannot find TIFF for base element {first_element}.")
-            return
-        
-        base_img = tiff.imread(first_path)
-        target_shape = base_img.shape
-
-        # Prepare channels based on number of elements
-        if len(element_list) >= 3:
-            elements_to_use = element_list[:3]
-            print(f"Creating RGB base from elements (R, G, B): {', '.join(elements_to_use)}")
-            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
-            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
-            img_b = tiff.imread(tiff_paths[elements_to_use[2]])
-        elif len(element_list) == 2:
-            elements_to_use = element_list[:2]
-            print(f"Creating RG base from elements (R, G): {', '.join(elements_to_use)}")
-            img_r = tiff.imread(tiff_paths[elements_to_use[0]])
-            img_g = tiff.imread(tiff_paths[elements_to_use[1]])
-            img_b = np.zeros(target_shape, dtype=base_img.dtype)
-        else: # 1 element
-            element_to_use = element_list[0]
-            print(f"Creating grayscale base from element: {element_to_use}")
-            img_r = tiff.imread(tiff_paths[element_to_use])
-            img_g = img_r
-            img_b = img_r
-
-        # Resize all to target shape
-        img_r = resize_if_needed(img_r, 'R channel', target_shape)
-        img_g = resize_if_needed(img_g, 'G channel', target_shape)
-        img_b = resize_if_needed(img_b, 'B channel', target_shape)
-
-        # Normalize and merge (BGR for OpenCV drawing)
-        norm_r = cv2.normalize(np.nan_to_num(img_r), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        norm_g = cv2.normalize(np.nan_to_num(img_g), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        norm_b = cv2.normalize(np.nan_to_num(img_b), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        merged_bgr = cv2.merge([norm_b, norm_g, norm_r])
-
-        # --- Draw individual blob boxes ---
-        # NOTE: Swapped green/blue to fix mismatch
-        color_map = {
-            'red':    (0, 0, 255),   # Red stays red
-            'green':  (255, 0, 0),   # Green blobs -> blue box
-            'blue':   (0, 255, 0),   # Blue blobs -> green box
-            'orange': (0, 165, 255),
-            'purple': (128, 0, 128),
-            'cyan':   (255, 255, 0),
-            'olive':  (0, 128, 128),
-            'yellow': (0, 255, 255),
-            'brown':  (42, 42, 165),
-            'pink':   (203, 192, 255)
-        }
-
-        print("Drawing individual element boxes...")
-        for color_name, blob_data in precomputed_blobs.items():
-            if color_name not in color_map:
-                continue
-            
-            box_color = color_map[color_name]
-            
-            for (thresh, area), blobs in blob_data.items():
-                for blob in blobs:
-                    x = blob.get('box_x')
-                    y = blob.get('box_y')
-                    size = blob.get('box_size')
-
-                    if x is not None and y is not None and size is not None:
-                        top_left = (int(x), int(y))
-                        bottom_right = (int(x + size), int(y + size))
-                        cv2.rectangle(merged_bgr, top_left, bottom_right, box_color, 2)
-
-        # --- Save the final image ---
-        merged_rgb_for_save = cv2.cvtColor(merged_bgr, cv2.COLOR_BGR2RGB)
-        output_path = Path(output_dir) / "All_of_elements.tiff"
-        tiff.imwrite(str(output_path), merged_rgb_for_save)
-        print(f"✅ Saved image with individual boxes to: {output_path}")
-
-    except KeyError as e:
-        print(f"❌ Could not create image. Missing element TIFF: {e}")
-    except Exception as e:
-        print(f"❌ An error occurred during image creation: {e}")
-        traceback.print_exc()
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
@@ -751,7 +728,7 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None, real_test=0):
     hdr = db[int(sid)]
     start_doc = dict(hdr.start)  # cast to plain dict
 
-    # 2) Grab the baseline table and build the ROI dict
+    #2) Grab the baseline table and build the ROI dict
     tbl = db.get_table(hdr, stream_name='baseline')
     row = tbl.iloc[0]
     if zp_flag:
@@ -788,7 +765,7 @@ def export_scan_params(sid=-1, zp_flag=True, save_to=None, real_test=0):
     else:
         raise ValueError(f"Cannot compute step_size for scan type {scan_info.get('type')}")
 
-    # 4) Assemble the result dict
+    #4) Assemble the result dict
     result = {
         "scan_id":       int(sid),
         "start_doc":     start_doc,
@@ -900,9 +877,9 @@ def send_fly2d_to_queue(label,
                         elem_list=None,
                         export_norm='sclr1_ch4',
                         data_wd='.',
-                        pos_save_to=None,
-                        real_test=0):
-    # det_names = [d.name for d in eval(dets)]
+                        pos_save_to=None):
+    
+    #det_names = [d.name for d in eval(dets)]
     det_names = ['fs', 'eiger2', 'xspress3']
 
     roi_json = ""
@@ -912,24 +889,22 @@ def send_fly2d_to_queue(label,
         roi_json = roi_positions
 
     print("Coarse scan")
-    if real_test == 1:
-        RM.item_execute(BPlan("fly2d_qserver_scan_export",
-                          label,
-                          det_names,
-                          mot1, mot1_s, mot1_e, mot1_n,
-                          mot2, mot2_s, mot2_e, mot2_n,
-                          exp_t,
-                          roi_json,
-                          scan_id or "",
-                          zp_move_flag,
-                          smar_move_flag,
-                          ic1_count,
-                          json.dumps(elem_list or []),
-                          export_norm,
-                          data_wd,
-                          pos_save_to or ""#,
-                        #   real_test
-                          ))
+    RM.item_execute(BPlan("fly2d_qserver_scan_export",
+                      label,
+                      det_names,
+                      mot1, mot1_s, mot1_e, mot1_n,
+                      mot2, mot2_s, mot2_e, mot2_n,
+                      exp_t,
+                      roi_json,
+                      scan_id or "",
+                      zp_move_flag,
+                      smar_move_flag,
+                      ic1_count,
+                      json.dumps(elem_list or []),
+                      export_norm,
+                      data_wd,
+                      pos_save_to or ""
+                      ))
     print("Coarse scan done")
 
 def wait_for_queue_done(poll_interval=2.0):
@@ -966,24 +941,19 @@ def submit_and_export(**params):
     send_fly2d_to_queue(**clean_params)
 
     # 2) wait
-    if params.get('real_test', 0) == 1:
-        print("[WAIT] waiting for scan to finish…")
-        while True:
-            st = RM.status()
-            if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
-                break
-            time.sleep(1.0)
-        print("[WAIT] scan complete.")
+    print("[WAIT] waiting for scan to finish…")
+    while True:
+        st = RM.status()
+        if st['items_in_queue'] == 0 and st['manager_state'] == 'idle':
+            break
+        time.sleep(1.0)
+    print("[WAIT] scan complete.")
 
     # 3) get last scan_id and prepare output folder
+    hdr = db[-1]
+    last_id = hdr.start['scan_id']
     data_wd = params.get('data_wd', '.')
-    if params.get('real_test', 0) == 1:
-        hdr = db[-1]
-        last_id = hdr.start['scan_id']
-    else:
-        last_id = 365896 # Use a dummy scan ID for testing 
-        last_id = 341431 # Use a dummy scan ID for testing 
-
+    last_id = 341431 #THIS IS TEMP REMOVE WHEN RUNNING 
     out_dir = os.path.join(data_wd, f"automap_{last_id}")
     os.makedirs(out_dir, exist_ok=True)
     print(f"[EXPORT] saving all outputs to {out_dir}")
@@ -1109,6 +1079,9 @@ def submit_and_export(**params):
         create_rgb_tiff(tiff_paths, out_dir, elem_list)
         create_all_elements_tiff(tiff_paths, out_dir, elem_list, precomputed_blobs)
 
+        if tiff_paths:
+        create_rgb_tiff(tiff_paths, out_dir, elem_list)
+
     #
     print("done") 
     print("[DONE] all exports complete.")
@@ -1126,7 +1099,7 @@ def load_and_queue(json_path, real_test):
         params = json.load(f)
 
     # 2) Extract blocking flag
-    # block_and_export = params.pop('block_and_export', True)
+    #block_and_export = params.pop('block_and_export', True)
 
     # 3) Load ROI from separate file if requested
     roi_file = params.pop('roi_positions_file', None)
@@ -1145,15 +1118,14 @@ def load_and_queue(json_path, real_test):
         params['mot1_n'] = int(abs(params['mot1_e'] - params['mot1_s']) / step)
         params['mot2_n'] = int(abs(params['mot2_e'] - params['mot2_s']) / step)
 
+    # print("defining dets", eval(params.get('dets')).names)
+
     # 5) Ensure dets is a string literal for eval()
-    # if isinstance(params.get('dets'), list):
-    #     params['dets'] = repr(params['dets'])
+    #if isinstance(eval(params.get('dets')), list):
+    #params['dets'] = repr(params['dets'])
 
     # 6) Dispatch
-    params['real_test'] = real_test
     submit_and_export(**params)
-
-
 
 def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, dwell = 0.05,
                         step_size = 500, plot_elem = ["Cr"],mll = False, beamline_params=None, initial_scan_path=None):
@@ -1213,6 +1185,8 @@ def mosaic_overlap_scan(dets = None, ylen = 100, xlen = 100, overlap_per = 15, d
     if total_time>60:
         total_time/=60
         unit = "hours"
+
+    #print(f'total time = {total_time} {unit}; 10 seconds to quit')
 
     ask = input(f"Optimized scan x and y range = {xlen_updated} by {ylen_updated};\n total time = {total_time} {unit}\n Do you wish to continue? (y/n) ")
 
