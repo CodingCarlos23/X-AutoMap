@@ -124,6 +124,8 @@ def headless_send_queue_fine_scan(directory_path, beamline_params, scan_ID, real
             continue
         if pattern.match(filename):
             continue
+        if pattern.match(filename):
+            continue
 
         json_path = os.path.join(directory_path, filename)
         print(filename)
@@ -395,6 +397,71 @@ def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_b
     except Exception as e:
         print(f"❌ An error occurred during image creation: {e}")
         traceback.print_exc()
+
+def create_rgb_tiff(tiff_paths, output_dir, element_list):
+    """
+    Merges the first three element TIFFs into a single RGB TIFF file,
+    and draws the union boxes on it.
+    """
+    if len(element_list) < 3:
+        print("⚠️ Not enough elements to create an RGB TIFF (need at least 3).")
+        return
+
+    rgb_elements = element_list[:3]
+    print(f"Creating RGB TIFF from elements (R, G, B): {rgb_elements[0]}, {rgb_elements[1]}, {rgb_elements[2]}")
+
+    try:
+        # Read the three images
+        img_r = tiff.imread(tiff_paths[rgb_elements[0]])
+        img_g = tiff.imread(tiff_paths[rgb_elements[1]])
+        img_b = tiff.imread(tiff_paths[rgb_elements[2]])
+
+        # Determine target shape and resize if needed
+        shapes = [img.shape for img in (img_r, img_g, img_b)]
+        target_shape = Counter(shapes).most_common(1)[0][0]
+
+        img_r = resize_if_needed(img_r, rgb_elements[0], target_shape)
+        img_g = resize_if_needed(img_g, rgb_elements[1], target_shape)
+        img_b = resize_if_needed(img_b, rgb_elements[2], target_shape)
+
+        # Normalize each channel to 0-255
+        norm_r = cv2.normalize(np.nan_to_num(img_r), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        norm_g = cv2.normalize(np.nan_to_num(img_g), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        norm_b = cv2.normalize(np.nan_to_num(img_b), None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        # Merge channels
+        merged_rgb = cv2.merge([norm_r, norm_g, norm_b])
+
+        # Draw union boxes
+        unions_json_path = Path(output_dir) / "unions_output.json"
+        if unions_json_path.exists():
+            print(f"Drawing union boxes from {unions_json_path}...")
+            with open(unions_json_path, "r") as f:
+                unions_data = json.load(f)
+            
+            for union_info in unions_data.values():
+                center = union_info.get("image_center")
+                length = union_info.get("image_length")
+
+                if center and length:
+                    x, y = center[0], center[1]
+                    half_len = length / 2
+                    top_left = (int(x - half_len), int(y - half_len))
+                    bottom_right = (int(x + half_len), int(y + half_len))
+                    cv2.rectangle(merged_rgb, top_left, bottom_right, (255, 255, 255), 2) # White box, thickness 2
+        else:
+            print(f"⚠️ Could not find {unions_json_path} to draw boxes.")
+
+        # Save the final image
+        output_path = Path(output_dir) / "Union of elements.tiff"
+        tiff.imwrite(output_path, merged_rgb)
+        print(f"✅ Saved merged RGB image with boxes to: {output_path}")
+
+    except KeyError as e:
+        print(f"❌ Could not create RGB TIFF. Missing element TIFF: {e}")
+    except Exception as e:
+        print(f"❌ An error occurred during RGB TIFF creation: {e}")
+        trackback.print_exc()
 
 def make_json_serializable(obj):
     if isinstance(obj, dict):
@@ -1694,6 +1761,8 @@ def load_and_queue(json_path, real_test):
         step = params.pop('step_size')
         params['mot1_n'] = int(abs(params['mot1_e'] - params['mot1_s']) / step)
         params['mot2_n'] = int(abs(params['mot2_e'] - params['mot2_s']) / step)
+
+    # print("defining dets", eval(params.get('dets')).names)
 
     # 5) Ensure dets is a string literal for eval()
     # if isinstance(params.get('dets'), list):
