@@ -370,7 +370,7 @@ def create_all_elements_tiff(tiff_paths, output_dir, element_list, precomputed_b
             
             box_color = color_map[color_name]
             
-            for (thresh, area), blobs in blob_data.items():
+            for (thresh, area, max_area), blobs in blob_data.items():
                 for blob in blobs:
                     x = blob.get('box_x')
                     y = blob.get('box_y')
@@ -635,13 +635,13 @@ def detect_blobs_(img_norm, img_orig, min_thresh, min_area, color, file_name):
 
     return blobs
 
-def detect_blobs(img_norm, img_orig, min_thresh, min_area, color, file_name):
+def detect_blobs(img_norm, img_orig, min_thresh, min_area, max_area, color, file_name):
     params = cv2.SimpleBlobDetector_Params()
     params.minThreshold = min_thresh
     params.maxThreshold = 255
     params.filterByArea = True
     params.minArea = min_area
-    params.maxArea = 1600
+    params.maxArea = max_area
     params.thresholdStep = 2  #Default was 10
 
     params.filterByColor = False#True
@@ -743,8 +743,9 @@ def first_scan_detect_blobs():
             norm, dilated = normalize_and_dilate(tiff_img, dilation_size, dilation_iterations)
             threshold = json_items[0][1]
             min_area = json_items[1][1]
-            blobs = detect_blobs(dilated, norm, threshold, min_area, color, tiff_name)
-            precomputed_blobs[color][(threshold, min_area)] = blobs
+            max_area = json_items[2][1]
+            blobs = detect_blobs(dilated, norm, threshold, min_area, max_area, color, tiff_name)
+            precomputed_blobs[color][(threshold, min_area, max_area)] = blobs
         except Exception as e:
             print(f"❌ Error processing {tiff_name}: {e}")
 
@@ -1479,6 +1480,7 @@ def submit_and_export(**params):
 
     min_thresh = params.get("min_threshold_intensity", "")
     min_area = params.get("min_threshold_area", "")
+    max_area = params.get("max_threshold_area", 1600)
     dilation_size = int(params.get("dialaiton_size", 5))
     dilation_iterations = int(params.get("dialation_iteration", 3))
     microns_per_pixel_x = step_size
@@ -1508,10 +1510,11 @@ def submit_and_export(**params):
                 tiff_norm,
                 min_thresh,
                 min_area,
+                max_area,
                 color,
                 tiff_path.name
             )
-            precomputed_blobs[color][(min_thresh, min_area)] = b
+            precomputed_blobs[color][(min_thresh, min_area, max_area)] = b
         except Exception as e:
             print(f"❌ Error processing {tiff_path.name}: {e}")
             trackback.print_exc()
@@ -1587,7 +1590,7 @@ def submit_and_export(**params):
                     formatted_blobs = {}
                     blob_index = 1
                     
-                    for (thresh, area), blobs in blob_data.items():
+                    for (thresh, area, max_area), blobs in blob_data.items():
                         for blob in blobs:
                             cx, cy = blob['center']
                             length = blob['box_size']
