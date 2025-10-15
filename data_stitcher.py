@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 # === CONFIG ===
-base_root = "/home/codingcarlos/Desktop/Data/Carlos-D/Carlos-D/Automap_2025Q3/xrf_data_mosaic_auto_PM_200um"
+base_root = "/home/codingcarlos/Desktop/Data/xrf_data_mosaic_auto_PM_200um"
 save_dir = "/home/codingcarlos/Desktop/Data/MergeImages"
 os.makedirs(save_dir, exist_ok=True)
 
@@ -113,3 +113,6 @@ if __name__ == "__main__":
         merge_folder(folder)
     stitch_images(scan_ids)
     print("\n🎉 All merging and stitching complete!")
+
+
+fix the over lapping it is about 15% for all images .
