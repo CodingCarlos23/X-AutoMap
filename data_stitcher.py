@@ -8,10 +8,13 @@ merge_and_stitch.py
 
 import os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
+import json
 
 # === CONFIG ===
-base_root = "/home/codingcarlos/Desktop/Data/xrf_data_mosaic_auto_PM_200um"
+base_root = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/xrf_data_mosaic_auto_PM_200um"
+base_root = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf"
+info_path = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/data/user_macros"
 save_dir = "/home/codingcarlos/Desktop/Data/MergeImages"
 os.makedirs(save_dir, exist_ok=True)
 
@@ -25,6 +28,7 @@ scan_ids = [
     367837, 367846, 367851, 367857, 367862, 367870, 367873, 367880,
     367885, 367890, 367897, 367899, 367903, 367910, 367915, 367921
 ]
+
 scan_folders = [f"output_tiff_scan2D_{sid}" for sid in scan_ids]
 
 # === FILE ELEMENTS ===
@@ -68,10 +72,9 @@ def merge_folder(scan_folder):
     return True
 
 # === CREATE MOSAIC ===
-def stitch_images(scan_ids, grid_size=(8, 8)):
+def stitch_images(scan_ids, grid_size=(8, 8), draw_tile_borders=False, column_shift_amount=0, draw_union_boxes=False):
     print("\n🧩 Stitching 8x8 mosaic...")
-    from PIL import Image
-
+    
     merged_files = [f"merged_output_tiff_scan2D_{sid}.png" for sid in scan_ids]
     tiles = []
     tile_size = None
@@ -91,6 +94,100 @@ def stitch_images(scan_ids, grid_size=(8, 8)):
             black = Image.fromarray(np.zeros((tile_size[1], tile_size[0], 3), dtype=np.uint8))
             tiles.append(black)
 
+    if not tiles:
+        print("No images to stitch.")
+        return
+
+    rows, cols = grid_size
+    tile_w, tile_h = tile_size
+
+    # Calculate mosaic width considering column shifts
+    mosaic_w = cols * tile_w - (cols - 1) * column_shift_amount
+    mosaic_h = rows * tile_h
+
+    mosaic = Image.new("RGB", (mosaic_w, mosaic_h))
+
+    draw = ImageDraw.Draw(mosaic)
+
+    for i in range(rows):
+        for j in range(cols):
+            idx = i * cols + j
+            if idx < len(tiles):
+                # Calculate x position with cumulative shift
+                x_tile_on_mosaic = j * tile_w - j * column_shift_amount
+                y_tile_on_mosaic = i * tile_h
+                mosaic.paste(tiles[idx], (x_tile_on_mosaic, y_tile_on_mosaic))
+
+                if draw_tile_borders:
+                    draw.rectangle([x_tile_on_mosaic, y_tile_on_mosaic, x_tile_on_mosaic + tile_w - 1, y_tile_on_mosaic + tile_h - 1], outline="white", width=1)
+
+                if draw_union_boxes:
+                    current_scan_id = scan_ids[idx]
+                    union_json_path = os.path.join(info_path, f"automap_{current_scan_id}", "unions_output.json")
+                    
+                    if os.path.exists(union_json_path):
+                        try:
+                            with open(union_json_path, "r") as f:
+                                union_data = json.load(f)
+                            
+                            for box_key, box_info in union_data.items():
+                                cx_img = box_info["image_center"][0]
+                                cy_img = box_info["image_center"][1]
+                                L_img = box_info["image_length"]
+
+                                x_start_on_tile = cx_img - L_img / 2
+                                y_start_on_tile = cy_img - L_img / 2
+                                x_end_on_tile = cx_img + L_img / 2
+                                y_end_on_tile = cy_img + L_img / 2
+
+                                x_start_mosaic = x_tile_on_mosaic + x_start_on_tile
+                                y_start_mosaic = y_tile_on_mosaic + y_start_on_tile
+                                x_end_mosaic = x_tile_on_mosaic + x_end_on_tile
+                                y_end_mosaic = y_tile_on_mosaic + y_end_on_tile
+                                
+                                draw.rectangle([x_start_mosaic, y_start_mosaic, x_end_mosaic - 1, y_end_mosaic - 1], outline="white", width=1)
+                        except Exception as e:
+                            print(f"⚠️ Error loading or processing {union_json_path}: {e}")
+                    else:
+                        print(f"⚠️ unions_output.json not found for scan ID {current_scan_id} at {union_json_path}")
+
+    mosaic_path = os.path.join(save_dir, "stitched_8x8_mosaic.png")
+    mosaic.save(mosaic_path)
+    print(f"✅ 8x8 mosaic saved to: {mosaic_path}")
+
+def stitch_union_tiffs(scan_ids, grid_size=(8, 8), base_path=None):
+    print("\n🧩 Stitching 8x8 union TIFF mosaic...")
+    from PIL import Image
+
+    if base_path is None:
+        print("Error: base_path for union TIFFs is not provided.")
+        return
+
+    tiles = []
+    tile_size = None
+
+    for sid in scan_ids:
+        # Assuming the structure is base_path/automap_sid/xrt/union_elements.tiff
+        tiff_path = os.path.join(base_path, f"automap_{sid}", "Union of elements.tiff")
+        
+        if os.path.exists(tiff_path):
+            img = Image.open(tiff_path).convert("RGB")
+            if tile_size is None:
+                tile_size = img.size
+            else:
+                img = img.resize(tile_size)
+            tiles.append(img)
+        else:
+            print(f"⚠️ Missing union TIFF: {tiff_path}")
+            if tile_size is None:
+                tile_size = (512, 512) # Default size if first tile is missing
+            black = Image.fromarray(np.zeros((tile_size[1], tile_size[0], 3), dtype=np.uint8))
+            tiles.append(black)
+
+    if not tiles:
+        print("No union TIFFs to stitch.")
+        return
+
     rows, cols = grid_size
     tile_w, tile_h = tile_size
     mosaic = Image.new("RGB", (cols * tile_w, rows * tile_h))
@@ -103,16 +200,21 @@ def stitch_images(scan_ids, grid_size=(8, 8)):
                 y = i * tile_h
                 mosaic.paste(tiles[idx], (x, y))
 
-    mosaic_path = os.path.join(save_dir, "stitched_8x8_mosaic.png")
+    mosaic_path = os.path.join(save_dir, "stitched_8x8_Union_tiff(old).tiff")
     mosaic.save(mosaic_path)
-    print(f"✅ 8x8 mosaic saved to: {mosaic_path}")
+    print(f"✅ 8x8 union TIFF mosaic saved to: {mosaic_path}")
 
 # === MAIN ===
 if __name__ == "__main__":
     for folder in scan_folders:
         merge_folder(folder)
-    stitch_images(scan_ids)
+    draw_tile_borders_param = False
+    column_shift_amount_param = 5
+    draw_union_boxes_param = True
+    stitch_images(scan_ids, draw_tile_borders=draw_tile_borders_param, column_shift_amount=column_shift_amount_param, draw_union_boxes=draw_union_boxes_param)
     print("\n🎉 All merging and stitching complete!")
 
-
-fix the over lapping it is about 15% for all images .
+    # === SUB === # New section
+    print("\n--- Starting sub-section: Union TIFF Stitching ---")
+    stitch_union_tiffs(scan_ids, base_path=info_path)
+    print("--- Sub-section complete ---")
