@@ -5,8 +5,8 @@ from PIL import Image
 import json
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QLabel, QCheckBox, QGraphicsView, QGraphicsScene, 
-                             QGraphicsPixmapItem, QFrame, QGraphicsRectItem)
-from PyQt5.QtCore import Qt, QLineF
+                             QGraphicsPixmapItem, QFrame, QGraphicsRectItem, QGraphicsTextItem)
+from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF
 from PyQt5.QtGui import QPixmap, QImage, QPen, QColor
 
 def merge_rgb_images(r_path, g_path, b_path):
@@ -104,7 +104,8 @@ def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, i
             'img_height': default_img_height,
             'grid_size': grid_size,
             'overlap_pixels': overlap_pixels,
-            'all_box_data': []
+            'all_box_data': [],
+            'scan_ids': []
         }
         return grid_image, img_info
         
@@ -131,9 +132,39 @@ def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, i
         'img_height': img_height,
         'grid_size': grid_size,
         'overlap_pixels': overlap_pixels,
-        'all_box_data': all_box_data
+        'all_box_data': all_box_data,
+        'scan_ids': scan_ids
     }
     return grid_image, img_info
+
+class HoverableGraphicsRectItem(QGraphicsRectItem):
+    def __init__(self, rect, scan_id, center_x, center_y, hover_text_item):
+        super().__init__(rect)
+        self.setAcceptHoverEvents(True)
+        self.scan_id = scan_id
+        self.center_x = center_x
+        self.center_y = center_y
+        self.hover_text_item = hover_text_item
+        self.original_pen = QPen(QColor(Qt.white)) # Default pen
+        self.original_pen.setStyle(Qt.DotLine)
+        self.original_pen.setWidth(1)
+        self.setPen(self.original_pen)
+
+    def hoverEnterEvent(self, event):
+        self.hover_text_item.setPlainText(f"Scan ID: {self.scan_id}\nImage Center: ({self.center_x:.2f}, {self.center_y:.2f})")
+        self.hover_text_item.setPos(self.mapToScene(event.pos()) + QPointF(10, -30))
+        self.hover_text_item.setVisible(True)
+        
+        highlight_pen = QPen(QColor(Qt.yellow))
+        highlight_pen.setStyle(Qt.DotLine)
+        highlight_pen.setWidth(2)
+        self.setPen(highlight_pen)
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.hover_text_item.setVisible(False)
+        self.setPen(self.original_pen)
+        super().hoverLeaveEvent(event)
 
 class ZoomableView(QGraphicsView):
     def __init__(self, parent=None):
@@ -148,6 +179,13 @@ class ZoomableView(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameShape(QFrame.NoFrame)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setMouseTracking(True)
+
+        self.hover_text_item = QGraphicsTextItem()
+        self.hover_text_item.setDefaultTextColor(Qt.white)
+        self.hover_text_item.setZValue(100) # Ensure it's on top
+        self.hover_text_item.setVisible(False)
+        self.scene.addItem(self.hover_text_item)
 
         self.borders = []
         self.union_boxes = []
@@ -249,11 +287,14 @@ class ZoomableView(QGraphicsView):
             box_x = image_x_offset + (center_x_json - length_json / 2)
             box_y = image_y_offset + (center_y_json - length_json / 2)
 
-            rect_item = QGraphicsRectItem(box_x, box_y, box_width, box_height)
+            rect_item = HoverableGraphicsRectItem(
+                QRectF(box_x, box_y, box_width, box_height),
+                scan_id,
+                center_x_json,
+                center_y_json,
+                self.hover_text_item # Pass the shared hover_text_item
+            )
             rect_item.setPen(pen)
-            
-            # Set tooltip using the provided image_center
-            rect_item.setToolTip(f"Scan ID: {scan_id}\nImage Center: ({center_x_json:.2f}, {center_y_json:.2f})")
             
             self.scene.addItem(rect_item)
             self.union_boxes.append(rect_item)
@@ -272,6 +313,54 @@ class ZoomableView(QGraphicsView):
             self.scale(zoom_in_factor, zoom_in_factor)
         else:
             self.scale(zoom_out_factor, zoom_out_factor)
+
+    def mouseMoveEvent(self, event):
+        # Always call super() first to ensure panning works
+        super().mouseMoveEvent(event)
+
+        # Only handle tooltips if no buttons are pressed (i.e., hovering)
+        if event.buttons() == Qt.NoButton:
+            pos = event.pos()
+            item = self.itemAt(pos)
+
+            # If not hovering over a HoverableGraphicsRectItem, check for grid cell
+            if not isinstance(item, HoverableGraphicsRectItem):
+                scene_pos = self.mapToScene(pos)
+                if self.img_info and 'scan_ids' in self.img_info and self.img_info['scan_ids']:
+                    img_width = self.img_info['img_width']
+                    img_height = self.img_info['img_height']
+                    grid_size = self.img_info['grid_size']
+                    overlap_pixels = self.img_info['overlap_pixels']
+
+                    scene_rect = self.scene.sceneRect()
+                    if not scene_rect.contains(scene_pos):
+                        self.hover_text_item.setVisible(False)
+                    else:
+                        effective_width = img_width - overlap_pixels
+                        if effective_width <= 0:
+                            self.hover_text_item.setVisible(False)
+                        else:
+                            col = int(scene_pos.x() / effective_width)
+                            row = int(scene_pos.y() / img_height)
+
+                            if 0 <= row < grid_size and 0 <= col < grid_size:
+                                index = row * grid_size + col
+                                if 0 <= index < len(self.img_info['scan_ids']):
+                                    scan_id = self.img_info['scan_ids'][index]
+                                    self.hover_text_item.setPlainText(f"Scan ID: {scan_id}")
+                                    self.hover_text_item.setPos(self.mapToScene(event.pos()) + QPointF(10, -30))
+                                    self.hover_text_item.setVisible(True)
+                                else:
+                                    self.hover_text_item.setVisible(False)
+                            else:
+                                self.hover_text_item.setVisible(False)
+                else:
+                    self.hover_text_item.setVisible(False)
+            # If hovering over a HoverableGraphicsRectItem, its own hoverEnterEvent will handle visibility
+            # So, we don't need to do anything here.
+        else:
+            # If a mouse button is pressed, hide the tooltip
+            self.hover_text_item.setVisible(False)
 
 class DataStitcherGUI(QMainWindow):
     def __init__(self, stitched_image=None, img_info=None):
