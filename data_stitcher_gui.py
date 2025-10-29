@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QV
                              QGraphicsPixmapItem, QFrame, QGraphicsRectItem, QGraphicsTextItem)
 from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF
 from PyQt5.QtGui import QPixmap, QImage, QPen, QColor
+import subprocess
 
 def merge_rgb_images(r_path, g_path, b_path):
     """Merges three grayscale images into a single RGB image."""
@@ -41,7 +42,7 @@ def merge_rgb_images(r_path, g_path, b_path):
         print(f"Warning: Could not find image file: {e}")
         return Image.new('RGB', (256, 256), (0, 0, 0)) # Return a black placeholder
 
-def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, info_path):
+def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, info_path, fine_path):
     """Creates an 8x8 grid of merged RGB images with column overlap and loads union box data."""
     merged_images = []
     all_box_data = [] # To store box data for all scans
@@ -105,7 +106,8 @@ def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, i
             'grid_size': grid_size,
             'overlap_pixels': overlap_pixels,
             'all_box_data': [],
-            'scan_ids': []
+            'scan_ids': [],
+            'fine_path': ""
         }
         return grid_image, img_info
         
@@ -133,13 +135,14 @@ def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, i
         'grid_size': grid_size,
         'overlap_pixels': overlap_pixels,
         'all_box_data': all_box_data,
-        'scan_ids': scan_ids
+        'scan_ids': scan_ids,
+        'fine_path': fine_path
     }
     return grid_image, img_info
 
 class HoverableGraphicsRectItem(QGraphicsRectItem):
-    def __init__(self, rect, scan_id, center_x, center_y, hover_text_item):
-        super().__init__(rect)
+    def __init__(self, x, y, width, height, scan_id, center_x, center_y, hover_text_item):
+        super().__init__(x, y, width, height) # Call QGraphicsRectItem's constructor
         self.setAcceptHoverEvents(True)
         self.scan_id = scan_id
         self.center_x = center_x
@@ -190,15 +193,17 @@ class ZoomableView(QGraphicsView):
         self.borders = []
         self.union_boxes = []
         self.img_info = None # To store img_width, img_height, grid_size, overlap_pixels
+        self.fine_path_base = "" # Store the base path for fine scans
 
     def set_pixmap(self, pixmap, img_info=None):
         self._pixmap_item.setPixmap(pixmap)
         self.img_info = img_info
+        self.fine_path_base = img_info.get('fine_path', "") # Get fine_path from img_info
         self.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
-        self.create_borders()
+        self._create_borders_internal()
         self.create_union_boxes()
 
-    def create_borders(self):
+    def _create_borders_internal(self):
         # Clear existing borders
         for border in self.borders:
             self.scene.removeItem(border)
@@ -288,13 +293,14 @@ class ZoomableView(QGraphicsView):
             box_y = image_y_offset + (center_y_json - length_json / 2)
 
             rect_item = HoverableGraphicsRectItem(
-                QRectF(box_x, box_y, box_width, box_height),
+                box_x, box_y, box_width, box_height, # Pass individual coordinates
                 scan_id,
                 center_x_json,
                 center_y_json,
                 self.hover_text_item # Pass the shared hover_text_item
             )
             rect_item.setPen(pen)
+            # rect_item.clicked.connect(self.open_fine_scan_folder) # Connect the signal
             
             self.scene.addItem(rect_item)
             self.union_boxes.append(rect_item)
@@ -362,6 +368,42 @@ class ZoomableView(QGraphicsView):
             # If a mouse button is pressed, hide the tooltip
             self.hover_text_item.setVisible(False)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            item = self.itemAt(event.pos())
+            if isinstance(item, HoverableGraphicsRectItem):
+                self.open_fine_scan_folder(item.scan_id)
+        super().mousePressEvent(event)
+
+    def open_fine_scan_folder(self, scan_id):
+        if not self.fine_path_base:
+            print("Fine path base not configured.")
+            return
+
+        # Find the folder that starts with scan_id
+        target_folder_prefix = str(scan_id) + "-"
+        found_folder = None
+        try:
+            for folder_name in os.listdir(self.fine_path_base):
+                if folder_name.startswith(target_folder_prefix) and os.path.isdir(os.path.join(self.fine_path_base, folder_name)):
+                    found_folder = folder_name
+                    break
+        except FileNotFoundError:
+            print(f"Error: Fine path base directory not found: {self.fine_path_base}")
+            return
+
+        if found_folder:
+            full_path = os.path.join(self.fine_path_base, found_folder)
+            print(f"Opening folder: {full_path}")
+            if sys.platform == "win32":
+                os.startfile(full_path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", full_path])
+            else: # Linux
+                subprocess.run(["xdg-open", full_path])
+        else:
+            print(f"No fine scan folder found for scan ID: {scan_id} in {self.fine_path_base}")
+
 class DataStitcherGUI(QMainWindow):
     def __init__(self, stitched_image=None, img_info=None):
         super().__init__()
@@ -386,12 +428,7 @@ class DataStitcherGUI(QMainWindow):
         self.legend_label = QLabel("Legend")
         self.legend_area.addWidget(self.legend_label)
 
-        self.feature1_checkbox = QCheckBox("Feature 1")
-        self.legend_area.addWidget(self.feature1_checkbox)
-        self.feature2_checkbox = QCheckBox("Feature 2")
-        self.legend_area.addWidget(self.feature2_checkbox)
-        self.feature3_checkbox = QCheckBox("Feature 3")
-        self.legend_area.addWidget(self.feature3_checkbox)
+
 
         self.show_borders_checkbox = QCheckBox("Show Borders")
         self.legend_area.addWidget(self.show_borders_checkbox)
@@ -429,8 +466,9 @@ if __name__ == '__main__':
     scan_folders_template = "output_tiff_scan2D_{sid}"
     
     info_path = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/data/user_macros" # Get info_path from user's code
-
-    stitched_image, img_info = create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, info_path) # Pass info_path
+    fine_path = "/home/codingcarlos/Desktop/Data/FineImages"
+    
+    stitched_image, img_info = create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, info_path, fine_path) # Pass info_path and fine_path
 
     main_win = DataStitcherGUI(stitched_image, img_info)
     main_win.show()
