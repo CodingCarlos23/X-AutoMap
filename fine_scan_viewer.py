@@ -10,17 +10,33 @@ import numpy as np
 from PIL import Image
 
 # === CONFIG ===
-base_root = "/home/codingcarlos/Desktop/Data/Carlos-D/Carlos-D/Automap_2025Q3/xrf_data_mosaic_auto_PM_200um"
+base_root = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/xrf_data_mosaic_auto_PM_200um"
+# /home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/xrf_data_mosaic_auto_PM_200um
+# /home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf
 save_root = "/home/codingcarlos/Desktop/Data/FineImages"
 os.makedirs(save_root, exist_ok=True)
 
 # === DEFINE SCAN RANGES ===
-scan_ranges = [
-    (367582, 367589),
-    (367589, 367592),
-    (367592, 367596),
-    (367596, 367600),
+scan_ids = [
+    367582, 367589, 367592, 367596, 367600, 367609, 367614, 367622,
+    367630, 367634, 367638, 367641, 367646, 367653, 367658, 367663,
+    367667, 367671, 367675, 367680, 367686, 367692, 367698, 367703,
+    367710, 367715, 367720, 367726, 367733, 367741, 367744, 367748,
+    367754, 367760, 367767, 367772, 367780, 367786, 367789, 367795,
+    367798, 367803, 367807, 367813, 367816, 367819, 367825, 367830,
+    367837, 367846, 367851, 367857, 367862, 367870, 367873, 367880,
+    367885, 367890, 367897, 367899, 367903, 367910, 367915, 367921
 ]
+
+# Create consecutive ranges
+scan_ranges = [(scan_ids[i], scan_ids[i+1]) for i in range(len(scan_ids)-1)]
+
+# scan_ranges = [
+#     (367582, 367589),
+#     (367589, 367592),
+#     (367592, 367596),
+#     (367596, 367600),
+# ]
 
 # === FILE ELEMENTS ===
 elements = {

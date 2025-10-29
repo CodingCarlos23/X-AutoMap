@@ -347,4 +347,4 @@ if __name__ == '__main__':
     main_win.show()
     sys.exit(app.exec_())
 
-    this is good just add the hover data information then add the clickable box that itll open diplay of its matching fine scan 
+    # this is good just add the hover data information then add the clickable box that itll open diplay of its matching fine scan 
