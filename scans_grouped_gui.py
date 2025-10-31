@@ -5,58 +5,106 @@ import json
 import io
 import numpy as np
 from PIL import Image, ImageDraw
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSizePolicy
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSizePolicy, QPushButton, QFileDialog
+from PyQt5.QtCore import Qt, QRect
+from PyQt5.QtGui import QPixmap, QImage, QPainter
+
+class SquareLabel(QLabel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        pix = self.pixmap()
+        if pix is None:
+            return
+
+        # Get the widget's dimensions
+        widget_width = self.width()
+        widget_height = self.height()
+
+        # Determine the size of the square
+        size = min(widget_width, widget_height)
+
+        # Calculate the top-left corner to center the square
+        x = (widget_width - size) // 2
+        y = (widget_height - size) // 2
+
+        # Define the target rectangle for drawing
+        target_rect = QRect(x, y, size, size)
+
+        # Scale the pixmap smoothly to the target size
+        scaled_pix = pix.scaled(target_rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+        # Create a painter and draw the pre-scaled pixmap
+        painter = QPainter(self)
+        painter.drawPixmap(target_rect, scaled_pix)
+
 
 class ScansGroupedViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Scans Grouped Viewer")
-        self.setGeometry(100, 100, 1200, 600)  # Initial window size
+        self.setWindowTitle("XRF Scan Viewer")
+        self.setGeometry(100, 100, 1200, 600)
 
+        # To store PIL images for export
+        self.merged_images = {}
+        self.initial_scan_id = 368304 # Store the initial scan ID
+
+        # Main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
-        main_layout = QHBoxLayout(central_widget)
+        # Header
+        header_label = QLabel("XRF Scan Viewer")
+        header_label.setAlignment(Qt.AlignCenter)
+        header_label.setStyleSheet("font-size: 24px; font-weight: bold; padding: 10px;")
+        main_layout.addWidget(header_label)
+
+        # Content (Image panels)
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        main_layout.addWidget(content_widget, 1) # Set stretch factor to 1
 
         # Left side: Large image placeholder
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        self.large_image_label = QLabel("Large Image Placeholder")
+        self.large_image_label = SquareLabel("Large Image Placeholder")
         self.large_image_label.setAlignment(Qt.AlignCenter)
         self.large_image_label.setStyleSheet("background-color: lightgray; border: 1px solid black;")
-        self.large_image_label.setMinimumSize(400, 400) # Placeholder size
-        self.large_image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        left_layout.addWidget(self.large_image_label)
-        main_layout.addWidget(left_widget, 1) # Take up 1 part of the horizontal space
+        content_layout.addWidget(self.large_image_label, 1) # Add directly to the horizontal layout
 
         # Right side: Four small images placeholder
         right_widget = QWidget()
         right_layout = QGridLayout(right_widget)
         self.small_image_labels = []
-        for i in range(2):
-            for j in range(2):
-                label = QLabel(f"Small Image {i*2 + j + 1}")
+        for i in range(4): # 4 rows
+            for j in range(2): # 2 columns
+                label = SquareLabel(f"Small Image {i*2 + j + 1}")
                 label.setAlignment(Qt.AlignCenter)
                 label.setStyleSheet("background-color: lightblue; border: 1px solid black;")
-                label.setMinimumSize(200, 200) # Placeholder size
-                label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
                 right_layout.addWidget(label, i, j)
                 self.small_image_labels.append(label)
-        main_layout.addWidget(right_widget, 1) # Take up 1 part of the horizontal space
+        content_layout.addWidget(right_widget, 1)
 
-        # Ensure square aspect ratio for image labels
-        self.large_image_label.setScaledContents(True)
-        for label in self.small_image_labels:
-            label.setScaledContents(True)
+        # Footer (Legend)
+        footer_widget = QWidget()
+        footer_layout = QHBoxLayout(footer_widget)
+        main_layout.addWidget(footer_widget)
 
-        # Example usage of the data copying function
-        scan_dir = self.copy_scan_data([368304])
+        export_button = QPushButton("Export Merged Images")
+        export_button.clicked.connect(self.export_images)
+        footer_layout.addStretch()
+        footer_layout.addWidget(export_button)
+        footer_layout.addStretch()
+
+        # Start the data processing workflow
+        scan_dir = self.copy_scan_data([self.initial_scan_id])
         if scan_dir:
-            num_boxes = self.load_and_display_merged_image(scan_dir, 368304)
+            num_boxes = self.load_and_display_merged_image(scan_dir, self.initial_scan_id)
             if num_boxes > 0:
-                processed_scan_ids = self.copy_secondary_scans(368304, num_boxes)
+                processed_scan_ids = self.copy_secondary_scans(self.initial_scan_id, num_boxes)
                 for i, scan_id in enumerate(processed_scan_ids):
                     if i < len(self.small_image_labels):
                         self.load_and_display_secondary_image(scan_dir, scan_id, self.small_image_labels[i])
@@ -114,6 +162,7 @@ class ScansGroupedViewer(QMainWindow):
             pixmap.loadFromData(buffer.getvalue(), 'PNG')
 
             self.large_image_label.setPixmap(pixmap)
+            self.merged_images[scan_id] = pil_img # Store for export
             return len(union_data)
 
         except FileNotFoundError as e:
@@ -159,6 +208,7 @@ class ScansGroupedViewer(QMainWindow):
             pixmap.loadFromData(buffer.getvalue(), 'PNG')
 
             target_label.setPixmap(pixmap)
+            self.merged_images[scan_id] = pil_img # Store for export
 
         except FileNotFoundError as e:
             print(f"Error loading secondary image: {e}")
@@ -238,6 +288,35 @@ class ScansGroupedViewer(QMainWindow):
                     print(f"Copied {src_path} to {dest_path}")
         
         return processed_scan_ids
+
+    def export_images(self):
+        if not self.merged_images:
+            print("No images to export.")
+            return
+
+        # Open a dialog to ask the user for a directory
+        base_save_dir = QFileDialog.getExistingDirectory(self, "Select Directory to Save Images")
+
+        if base_save_dir:
+            # Create the custom subfolder
+            folder_name = f"scan_{self.initial_scan_id}_Coarse_Fine_Scans"
+            save_dir = os.path.join(base_save_dir, folder_name)
+            os.makedirs(save_dir, exist_ok=True)
+
+            for scan_id, pil_img in self.merged_images.items():
+                # Differentiate between the primary scan and secondary scans for naming
+                if scan_id == self.initial_scan_id:
+                    file_name = f"merged_scan_{scan_id}.png"
+                else:
+                    file_name = f"merged_detsum_{scan_id}.png"
+                
+                save_path = os.path.join(save_dir, file_name)
+                try:
+                    pil_img.save(save_path)
+                    print(f"Saved image to {save_path}")
+                except Exception as e:
+                    print(f"Error saving image {save_path}: {e}")
+
 
 
 
