@@ -18,7 +18,7 @@ class SquareLabel(QLabel):
         super().paintEvent(event)
 
         pix = self.pixmap()
-        if pix is None:
+        if pix is None or pix.isNull():
             return
 
         # Get the widget's dimensions
@@ -64,6 +64,23 @@ class ScansGroupedViewer(QMainWindow):
         header_label.setStyleSheet("font-size: 24px; font-weight: bold; padding: 10px;")
         main_layout.addWidget(header_label)
 
+        # Navigation
+        nav_widget = QWidget()
+        nav_layout = QHBoxLayout(nav_widget)
+        main_layout.addWidget(nav_widget)
+
+        self.prev_button = QPushButton("<- Previous")
+        self.scan_id_label = QLabel("Scan ID: N/A")
+        self.scan_id_label.setAlignment(Qt.AlignCenter)
+        self.next_button = QPushButton("Next ->")
+
+        nav_layout.addWidget(self.prev_button)
+        nav_layout.addStretch()
+        nav_layout.addWidget(self.scan_id_label)
+        nav_layout.addStretch()
+        nav_layout.addWidget(self.next_button)
+
+
         # Content (Image panels)
         content_widget = QWidget()
         content_layout = QHBoxLayout(content_widget)
@@ -99,15 +116,99 @@ class ScansGroupedViewer(QMainWindow):
         footer_layout.addWidget(export_button)
         footer_layout.addStretch()
 
-        # Start the data processing workflow
-        scan_dir = self.copy_scan_data([self.initial_scan_id])
-        if scan_dir:
-            num_boxes = self.load_and_display_merged_image(scan_dir, self.initial_scan_id)
-            if num_boxes > 0:
-                processed_scan_ids = self.copy_secondary_scans(self.initial_scan_id, num_boxes)
-                for i, scan_id in enumerate(processed_scan_ids):
-                    if i < len(self.small_image_labels):
-                        self.load_and_display_secondary_image(scan_dir, scan_id, self.small_image_labels[i])
+        self.prev_button.clicked.connect(self.show_previous_scan)
+        self.next_button.clicked.connect(self.show_next_scan)
+
+        # --- Data Processing and Display --- #
+        nums = [
+            368294, 368296, 368297, 368298, 368299, 368303, 368304, 368311,
+            368313, 368314, 368315, 368333, 368343, 368362, 368370, 368383,
+            368412, 368442, 368454, 368464, 368472, 368490, 368499, 368513,
+            368525, 368530, 368549, 368604, 368612, 368620, 368643, 368653,
+            368662, 368671, 368683, 368695, 368701, 368709, 368715, 368722,
+            368729, 368743, 368763, 368772, 368782, 368792, 368801, 368826,
+            368836, 368851, 368857, 368876, 368890, 368950, 368961, 368984,
+            369001, 369009, 369017, 369025, 369042, 369058, 369068, 369089,
+            369098, 369116, 369127, 369139, 369155, 369447, 369449, 369453,
+            369462, 369467
+        ]
+
+        # Define all scans to be processed
+        all_scan_ids_to_process = nums
+        self.available_scans = []
+        self.failed_scans = []
+        self.current_scan_index = 0
+
+        # Disable buttons during data processing
+        self.prev_button.setEnabled(False)
+        self.next_button.setEnabled(False)
+
+        # 1. Process all scans for data gathering first
+        for scan_id in all_scan_ids_to_process:
+            if self.gather_data_for_scan(scan_id):
+                self.available_scans.append(scan_id)
+            else:
+                self.failed_scans.append(scan_id)
+
+        # 2. Display the first available scan initially
+        if self.available_scans:
+            self.display_scan(self.available_scans[self.current_scan_index])
+            # Enable navigation buttons only if there's more than one scan to show
+            if len(self.available_scans) > 1:
+                self.prev_button.setEnabled(True)
+                self.next_button.setEnabled(True)
+        else:
+            self.large_image_label.setText("No valid scan data found to display.")
+            self.scan_id_label.setText("Scan ID: None")
+
+        # 3. Report any failures
+        if self.failed_scans:
+            print("\n--- Data Gathering Summary ---")
+            print("Could not find source data for the following scan IDs:")
+            for scan_id in self.failed_scans:
+                print(f"- {scan_id}")
+
+    def display_scan(self, scan_id):
+        self.scan_id_label.setText(f"Scan ID: {scan_id}")
+        self.merged_images = {} # Clear images for export
+
+        # Clear all image labels
+        self.large_image_label.setPixmap(QPixmap()) # Set a blank pixmap
+        self.large_image_label.setText(f"Loading Scan {scan_id}...")
+        for label in self.small_image_labels:
+            label.setPixmap(QPixmap())
+            label.setText("")
+
+        # Get scan directory
+        scan_dir = os.path.join("/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped", str(scan_id))
+        if not os.path.isdir(scan_dir):
+            self.large_image_label.setText(f"Error: Data for scan {scan_id} not found.")
+            return
+
+        # Load and display the images for this scan
+        num_boxes = self.load_and_display_merged_image(scan_dir, scan_id)
+        if num_boxes > 0:
+            # Determine the secondary scan IDs that should exist
+            secondary_scan_ids = [scan_id + i for i in range(1, num_boxes + 1)]
+            for i, sec_scan_id in enumerate(secondary_scan_ids):
+                if i < len(self.small_image_labels):
+                    self.load_and_display_secondary_image(scan_dir, sec_scan_id, self.small_image_labels[i])
+
+    def show_previous_scan(self):
+        self.current_scan_index -= 1
+        if self.current_scan_index < 0:
+            self.current_scan_index = len(self.available_scans) - 1
+        self.display_scan(self.available_scans[self.current_scan_index])
+
+    def show_next_scan(self):
+        self.current_scan_index += 1
+        if self.current_scan_index >= len(self.available_scans):
+            self.current_scan_index = 0
+        self.display_scan(self.available_scans[self.current_scan_index])
+
+
+
+
 
     def load_and_display_merged_image(self, scan_dir, scan_id):
         ELEMENTS = ["Ca", "Fe", "Si"]
@@ -219,20 +320,23 @@ class ScansGroupedViewer(QMainWindow):
 
 
 
-    def copy_scan_data(self, scan_ids):
-        BASE_DATA_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/automap_368304"
+    def copy_scan_data(self, scan_id):
+        BASE_DATA_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3"
         DEST_PARENT_DIR = "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped"
         ELEMENTS = ["Ca", "Fe", "Si"]
 
-        # For this example, we only use the first scan_id
-        scan_id = scan_ids[0]
+        src_parent_dir = os.path.join(BASE_DATA_DIR, f"automap_{scan_id}")
+        if not os.path.isdir(src_parent_dir):
+            print(f"Source directory not found: {src_parent_dir}")
+            return None
+
         scan_dest_dir = os.path.join(DEST_PARENT_DIR, str(scan_id))
         os.makedirs(scan_dest_dir, exist_ok=True)
         print(f"Created directory: {scan_dest_dir}")
 
         for element in ELEMENTS:
             src_file_name = f"scan_{scan_id}_{element}.tiff"
-            src_path = os.path.join(BASE_DATA_DIR, src_file_name)
+            src_path = os.path.join(src_parent_dir, src_file_name)
             dest_path = os.path.join(scan_dest_dir, src_file_name)
 
             if os.path.exists(src_path):
@@ -243,7 +347,7 @@ class ScansGroupedViewer(QMainWindow):
 
         # Copy the JSON file
         json_src_file_name = "unions_output_FeCaSi.json"
-        json_src_path = os.path.join(BASE_DATA_DIR, json_src_file_name)
+        json_src_path = os.path.join(src_parent_dir, json_src_file_name)
         json_dest_path = os.path.join(scan_dest_dir, json_src_file_name)
         if os.path.exists(json_src_path):
             shutil.copy(json_src_path, json_dest_path)
@@ -254,7 +358,7 @@ class ScansGroupedViewer(QMainWindow):
         return scan_dest_dir
 
     def copy_secondary_scans(self, initial_scan_id, num_scans):
-        BASE_DATA_DIR = "/home/codingcarlos/Desktop/Beamline_Data/Automap_2025Q3/all_xrf"
+        BASE_DATA_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf"
         DEST_DIR = os.path.join("/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped", str(initial_scan_id))
         ELEMENTS = ["Fe", "Ca", "Si"] # The elements to look for
         processed_scan_ids = []
@@ -288,6 +392,29 @@ class ScansGroupedViewer(QMainWindow):
                     print(f"Copied {src_path} to {dest_path}")
         
         return processed_scan_ids
+
+    def gather_data_for_scan(self, scan_id):
+        print(f"--- Gathering data for Scan ID: {scan_id} ---")
+        scan_dir = self.copy_scan_data(scan_id)
+        if not scan_dir:
+            print(f"--- Failed to find primary data for Scan ID: {scan_id} ---")
+            return False
+
+        json_path = os.path.join(scan_dir, "unions_output_FeCaSi.json")
+        num_boxes = 0
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r') as f:
+                    union_data = json.load(f)
+                    num_boxes = len(union_data)
+            except (IOError, json.JSONDecodeError) as e:
+                print(f"Error reading or parsing JSON for scan {scan_id}: {e}")
+        
+        if num_boxes > 0:
+            self.copy_secondary_scans(scan_id, num_boxes)
+        print(f"--- Finished gathering data for Scan ID: {scan_id} ---")
+        return True
+
 
     def export_images(self):
         if not self.merged_images:
