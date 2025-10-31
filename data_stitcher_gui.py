@@ -6,7 +6,7 @@ import json
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QLabel, QCheckBox, QGraphicsView, QGraphicsScene, 
                              QGraphicsPixmapItem, QFrame, QGraphicsRectItem, QGraphicsTextItem)
-from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF
+from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QPen, QColor
 import subprocess
 
@@ -170,6 +170,8 @@ class HoverableGraphicsRectItem(QGraphicsRectItem):
         super().hoverLeaveEvent(event)
 
 class ZoomableView(QGraphicsView):
+    mouseMoved = pyqtSignal(QPointF) # Signal to emit mouse coordinates
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scene = QGraphicsScene(self)
@@ -324,14 +326,15 @@ class ZoomableView(QGraphicsView):
         # Always call super() first to ensure panning works
         super().mouseMoveEvent(event)
 
+        scene_pos = self.mapToScene(event.pos())
+        self.mouseMoved.emit(scene_pos) # Emit the signal with scene coordinates
+
         # Only handle tooltips if no buttons are pressed (i.e., hovering)
         if event.buttons() == Qt.NoButton:
-            pos = event.pos()
-            item = self.itemAt(pos)
+            item = self.itemAt(event.pos())
 
             # If not hovering over a HoverableGraphicsRectItem, check for grid cell
             if not isinstance(item, HoverableGraphicsRectItem):
-                scene_pos = self.mapToScene(pos)
                 if self.img_info and 'scan_ids' in self.img_info and self.img_info['scan_ids']:
                     img_width = self.img_info['img_width']
                     img_height = self.img_info['img_height']
@@ -353,7 +356,7 @@ class ZoomableView(QGraphicsView):
                                 index = row * grid_size + col
                                 if 0 <= index < len(self.img_info['scan_ids']):
                                     scan_id = self.img_info['scan_ids'][index]
-                                    self.hover_text_item.setPlainText(f"Scan ID: {scan_id}")
+                                    self.hover_text_item.setPlainText(f"Scan ID: {scan_id}\nMouse Coords: (X: {scene_pos.x():.2f}, Y: {scene_pos.y():.2f})")
                                     self.hover_text_item.setPos(self.mapToScene(event.pos()) + QPointF(10, -30))
                                     self.hover_text_item.setVisible(True)
                                 else:
@@ -428,6 +431,17 @@ class DataStitcherGUI(QMainWindow):
         self.legend_label = QLabel("Legend")
         self.legend_area.addWidget(self.legend_label)
 
+        self.mouse_coords_label = QLabel("Mouse Coords: (X: -, Y: -) | Real: (X: -, Y: -)")
+        self.legend_area.addWidget(self.mouse_coords_label)
+
+        # Real-world coordinate conversion parameters
+        self.origin_x = 10.0
+        self.origin_y = 20.0
+        self.micron_per_pixel_x = 0.25
+        self.micron_per_pixel_y = 0.25
+
+        self.image_view.mouseMoved.connect(self.update_mouse_coords_label)
+
 
 
         self.show_borders_checkbox = QCheckBox("Show Borders")
@@ -439,6 +453,12 @@ class DataStitcherGUI(QMainWindow):
         self.show_union_boxes_checkbox.toggled.connect(self.image_view.set_union_boxes_visible) # Connect signal
 
         self.legend_area.addStretch()
+
+    def update_mouse_coords_label(self, pos):
+        # Calculate real-world coordinates
+        real_x = self.origin_x + (pos.x() * self.micron_per_pixel_x)
+        real_y = self.origin_y + (pos.y() * self.micron_per_pixel_y)
+        self.mouse_coords_label.setText(f"Mouse Coords: (X: {pos.x():.2f}, Y: {pos.y():.2f}) | Real: (X: {real_x:.2f}, Y: {real_y:.2f})")
 
 
 if __name__ == '__main__':
