@@ -286,6 +286,24 @@ class ZoomableView(QGraphicsView):
             # Ensure these keys exist in original_box_data
             center_x_json = original_box_data.get('image_center', [0, 0])[0]
             center_y_json = original_box_data.get('image_center', [0, 0])[1]
+
+            #****THIS IS TO FIX THE ERROR FROM merge_boxes_strict in utils.py
+            # Calibration values
+            microns_per_pixel_x = 0.250
+            microns_per_pixel_y = 0.250
+            true_origin_x = 10
+            true_origin_y = 20
+
+            # Get accurate real center (μm)
+            real_cx = original_box_data['real_center_um'][0]
+            real_cy = original_box_data['real_center_um'][1]
+
+            # Convert back to image center (pixels)
+            center_x_json = (real_cx - true_origin_x) / microns_per_pixel_x
+            center_y_json = (real_cy - true_origin_y) / microns_per_pixel_y
+
+
+
             length_json = original_box_data.get('image_length', 0)
 
             # Calculate top-left (x, y) and width/height for QGraphicsRectItem
