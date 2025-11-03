@@ -9,6 +9,11 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHB
 from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QPixmap, QImage, QPainter
 
+# --- File Path Constants ---
+PROCESSED_SCANS_DIR = "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped"
+RAW_PRIMARY_SCAN_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3"
+RAW_SECONDARY_SCAN_DIR = os.path.join(RAW_PRIMARY_SCAN_DIR, "all_xrf")
+
 class SquareLabel(QLabel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -121,8 +126,9 @@ class ScansGroupedViewer(QMainWindow):
 
         # --- Data Processing and Display --- #
         nums = [
-            368294, 368296, 368297, 368298, 368299, 368303, 368304, 368311,
-            368313, 368314, 368315, 368333, 368343, 368362, 368370, 368383,
+            #368294, 368296, 368297, 368298, 368299, 368303, 368304, 368311,
+            #368313, 368314, 368315, 368333, 
+            368343, 368362, 368370, 368383,
             368412, 368442, 368454, 368464, 368472, 368490, 368499, 368513,
             368525, 368530, 368549, 368604, 368612, 368620, 368643, 368653,
             368662, 368671, 368683, 368695, 368701, 368709, 368715, 368722,
@@ -130,7 +136,8 @@ class ScansGroupedViewer(QMainWindow):
             368836, 368851, 368857, 368876, 368890, 368950, 368961, 368984,
             369001, 369009, 369017, 369025, 369042, 369058, 369068, 369089,
             369098, 369116, 369127, 369139, 369155, 369447, 369449, 369453,
-            369462, 369467
+            369462, 369467,
+            367582
         ]
 
         # Define all scans to be processed
@@ -180,7 +187,7 @@ class ScansGroupedViewer(QMainWindow):
             label.setText("")
 
         # Get scan directory
-        scan_dir = os.path.join("/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped", str(scan_id))
+        scan_dir = os.path.join(PROCESSED_SCANS_DIR, str(scan_id))
         if not os.path.isdir(scan_dir):
             self.large_image_label.setText(f"Error: Data for scan {scan_id} not found.")
             return
@@ -321,16 +328,14 @@ class ScansGroupedViewer(QMainWindow):
 
 
     def copy_scan_data(self, scan_id):
-        BASE_DATA_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3"
-        DEST_PARENT_DIR = "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped"
         ELEMENTS = ["Ca", "Fe", "Si"]
 
-        src_parent_dir = os.path.join(BASE_DATA_DIR, f"automap_{scan_id}")
+        src_parent_dir = os.path.join(RAW_PRIMARY_SCAN_DIR, f"automap_{scan_id}")
         if not os.path.isdir(src_parent_dir):
             print(f"Source directory not found: {src_parent_dir}")
             return None
 
-        scan_dest_dir = os.path.join(DEST_PARENT_DIR, str(scan_id))
+        scan_dest_dir = os.path.join(PROCESSED_SCANS_DIR, str(scan_id))
         os.makedirs(scan_dest_dir, exist_ok=True)
         print(f"Created directory: {scan_dest_dir}")
 
@@ -358,14 +363,13 @@ class ScansGroupedViewer(QMainWindow):
         return scan_dest_dir
 
     def copy_secondary_scans(self, initial_scan_id, num_scans):
-        BASE_DATA_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf"
-        DEST_DIR = os.path.join("/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped", str(initial_scan_id))
+        DEST_DIR = os.path.join(PROCESSED_SCANS_DIR, str(initial_scan_id))
         ELEMENTS = ["Fe", "Ca", "Si"] # The elements to look for
         processed_scan_ids = []
 
         for i in range(1, num_scans + 1):
             scan_id = initial_scan_id + i
-            src_dir = os.path.join(BASE_DATA_DIR, f"output_tiff_scan2D_{scan_id}")
+            src_dir = os.path.join(RAW_SECONDARY_SCAN_DIR, f"output_tiff_scan2D_{scan_id}")
 
             if not os.path.isdir(src_dir):
                 print(f"Source directory not found: {src_dir}")
