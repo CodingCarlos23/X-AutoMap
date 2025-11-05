@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QV
 from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QPen, QColor
 import subprocess
+import shutil
 
 def merge_rgb_images(r_path, g_path, b_path):
     """Merges three grayscale images into a single RGB image."""
@@ -136,17 +137,18 @@ def create_stitched_grid(base_root, scan_ids, elements, scan_folders_template, i
         'overlap_pixels': overlap_pixels,
         'all_box_data': all_box_data,
         'scan_ids': scan_ids,
-        'fine_path': fine_path
+        'fine_path': fine_path,
+        'info_path': info_path
     }
     return grid_image, img_info
 
 class HoverableGraphicsRectItem(QGraphicsRectItem):
-    def __init__(self, x, y, width, height, scan_id, center_x, center_y, hover_text_item):
+    def __init__(self, x, y, width, height, scan_id, real_center_x, real_center_y, hover_text_item):
         super().__init__(x, y, width, height) # Call QGraphicsRectItem's constructor
         self.setAcceptHoverEvents(True)
         self.scan_id = scan_id
-        self.center_x = center_x
-        self.center_y = center_y
+        self.real_center_x = real_center_x
+        self.real_center_y = real_center_y
         self.hover_text_item = hover_text_item
         self.original_pen = QPen(QColor(Qt.white)) # Default pen
         self.original_pen.setStyle(Qt.DotLine)
@@ -154,7 +156,7 @@ class HoverableGraphicsRectItem(QGraphicsRectItem):
         self.setPen(self.original_pen)
 
     def hoverEnterEvent(self, event):
-        self.hover_text_item.setPlainText(f"Scan ID: {self.scan_id}\nImage Center: ({self.center_x:.2f}, {self.center_y:.2f})")
+        self.hover_text_item.setPlainText(f"Scan ID: {self.scan_id}\nReal Center (μm): ({self.real_center_x:.2f}, {self.real_center_y:.2f})")
         self.hover_text_item.setPos(self.mapToScene(event.pos()) + QPointF(10, -30))
         self.hover_text_item.setVisible(True)
         
@@ -176,6 +178,7 @@ class ZoomableView(QGraphicsView):
         super().__init__(parent)
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
+        self.scene.setBackgroundBrush(QColor(Qt.black))
         self._pixmap_item = QGraphicsPixmapItem()
         self.scene.addItem(self._pixmap_item)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -196,11 +199,13 @@ class ZoomableView(QGraphicsView):
         self.union_boxes = []
         self.img_info = None # To store img_width, img_height, grid_size, overlap_pixels
         self.fine_path_base = "" # Store the base path for fine scans
+        self.info_path = "" # Store the base path for coarse scan info
 
     def set_pixmap(self, pixmap, img_info=None):
         self._pixmap_item.setPixmap(pixmap)
         self.img_info = img_info
         self.fine_path_base = img_info.get('fine_path', "") # Get fine_path from img_info
+        self.info_path = img_info.get('info_path', "") # Get info_path from img_info
         self.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
         self._create_borders_internal()
         self.create_union_boxes()
@@ -287,22 +292,16 @@ class ZoomableView(QGraphicsView):
             center_x_json = original_box_data.get('image_center', [0, 0])[0]
             center_y_json = original_box_data.get('image_center', [0, 0])[1]
 
-            #****THIS IS TO FIX THE ERROR FROM merge_boxes_strict in utils.py
-            # Calibration values
-            microns_per_pixel_x = 0.250
-            microns_per_pixel_y = 0.250
-            true_origin_x = 10
-            true_origin_y = 20
-
-            # Get accurate real center (μm)
+            # Get accurate real center (μm) for hover text
             real_cx = original_box_data['real_center_um'][0]
             real_cy = original_box_data['real_center_um'][1]
 
-            # Convert back to image center (pixels)
-            center_x_json = (real_cx - true_origin_x) / microns_per_pixel_x
-            center_y_json = (real_cy - true_origin_y) / microns_per_pixel_y
-
-
+            # --- Apply negative shift formula ---
+            x_shift_tile = img_width / 2
+            y_shift_tile = img_height / 2
+            if center_x_json < 0 or center_y_json < 0:
+                center_x_json += x_shift_tile
+                center_y_json += y_shift_tile
 
             length_json = original_box_data.get('image_length', 0)
 
@@ -315,8 +314,8 @@ class ZoomableView(QGraphicsView):
             rect_item = HoverableGraphicsRectItem(
                 box_x, box_y, box_width, box_height, # Pass individual coordinates
                 scan_id,
-                center_x_json,
-                center_y_json,
+                real_cx,
+                real_cy,
                 self.hover_text_item # Pass the shared hover_text_item
             )
             rect_item.setPen(pen)
@@ -400,6 +399,9 @@ class ZoomableView(QGraphicsView):
         if not self.fine_path_base:
             print("Fine path base not configured.")
             return
+        if not self.info_path:
+            print("Info path not configured.")
+            return
 
         # Find the folder that starts with scan_id
         target_folder_prefix = str(scan_id) + "-"
@@ -414,6 +416,23 @@ class ZoomableView(QGraphicsView):
             return
 
         if found_folder:
+            # Copy the corresponding unions_output.json to the fine scan folder
+            source_json_dir = os.path.join(self.info_path, f"automap_{scan_id}")
+            source_json_path = os.path.join(source_json_dir, "unions_output.json")
+            
+            dest_folder_path = os.path.join(self.fine_path_base, found_folder)
+            dest_json_path = os.path.join(dest_folder_path, "unions_output.json")
+
+            if os.path.exists(source_json_path):
+                try:
+                    shutil.copy(source_json_path, dest_json_path)
+                    print(f"Copied {source_json_path} to {dest_json_path}")
+                except Exception as e:
+                    print(f"Error copying JSON file: {e}")
+            else:
+                print(f"Warning: Source JSON not found, not copied: {source_json_path}")
+
+            # Open the folder
             full_path = os.path.join(self.fine_path_base, found_folder)
             print(f"Opening folder: {full_path}")
             if sys.platform == "win32":
@@ -429,6 +448,14 @@ class DataStitcherGUI(QMainWindow):
     def __init__(self, stitched_image=None, img_info=None):
         super().__init__()
         self.setWindowTitle("Data Stitcher")
+        self.setStyleSheet("""
+            QMainWindow { background-color: black; }
+            QLabel { color: white; }
+            QCheckBox { color: white; }
+            QPushButton { background-color: #444; color: white; border: 1px solid #666; padding: 5px; border-radius: 3px; }
+            QPushButton:hover { background-color: #555; }
+            QPushButton:disabled { background-color: #222; color: #888; border: 1px solid #444; }
+        """)
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QHBoxLayout(self.central_widget)
