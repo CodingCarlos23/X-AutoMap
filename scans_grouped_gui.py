@@ -53,6 +53,13 @@ class ScansGroupedViewer(QMainWindow):
         super().__init__()
         self.setWindowTitle("XRF Scan Viewer")
         self.setGeometry(100, 100, 1200, 600)
+        self.setStyleSheet("""
+            QMainWindow { background-color: black; }
+            QLabel { color: white; }
+            QPushButton { background-color: #444; color: white; border: 1px solid #666; padding: 5px; border-radius: 3px; }
+            QPushButton:hover { background-color: #555; }
+            QPushButton:disabled { background-color: #222; color: #888; border: 1px solid #444; }
+        """)
 
         # To store PIL images for export
         self.merged_images = {}
@@ -94,7 +101,7 @@ class ScansGroupedViewer(QMainWindow):
         # Left side: Large image placeholder
         self.large_image_label = SquareLabel("Large Image Placeholder")
         self.large_image_label.setAlignment(Qt.AlignCenter)
-        self.large_image_label.setStyleSheet("background-color: lightgray; border: 1px solid black;")
+        self.large_image_label.setStyleSheet("background-color: #222; border: 1px solid #444;")
         content_layout.addWidget(self.large_image_label, 1) # Add directly to the horizontal layout
 
         # Right side: Four small images placeholder
@@ -105,7 +112,7 @@ class ScansGroupedViewer(QMainWindow):
             for j in range(2): # 2 columns
                 label = SquareLabel(f"Small Image {i*2 + j + 1}")
                 label.setAlignment(Qt.AlignCenter)
-                label.setStyleSheet("background-color: lightblue; border: 1px solid black;")
+                label.setStyleSheet("background-color: #222; border: 1px solid #444;")
                 right_layout.addWidget(label, i, j)
                 self.small_image_labels.append(label)
         content_layout.addWidget(right_widget, 1)
@@ -253,11 +260,20 @@ class ScansGroupedViewer(QMainWindow):
                     union_data = json.load(f)
 
                 draw = ImageDraw.Draw(pil_img)
+                tile_w, tile_h = pil_img.size
 
-                for item in union_data.values(): # Iterate over dictionary values
+                for key, item in union_data.items(): # Iterate over dictionary items
                     if 'image_center' in item and 'image_length' in item:
                         x, y = item['image_center']
                         length = item['image_length']
+
+                        # --- Apply negative shift formula ---
+                        x_shift_tile = tile_w / 2
+                        y_shift_tile = tile_h / 2
+                        if x < 0 or y < 0:
+                            x += x_shift_tile
+                            y += y_shift_tile
+                        
                         half_length = length / 2
                         # Define the bounding box for the rectangle
                         box = [x - half_length, y - half_length, x + half_length, y + half_length]
