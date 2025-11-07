@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, QV
                              QLabel, QCheckBox, QGraphicsView, QGraphicsScene, 
                              QGraphicsPixmapItem, QFrame, QGraphicsRectItem, QGraphicsTextItem)
 from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF, pyqtSignal
-from PyQt5.QtGui import QPixmap, QImage, QPen, QColor
+from PyQt5.QtGui import QPixmap, QImage, QPen, QColor, QFont
 import subprocess
 import shutil
 
@@ -191,6 +191,9 @@ class ZoomableView(QGraphicsView):
 
         self.hover_text_item = QGraphicsTextItem()
         self.hover_text_item.setDefaultTextColor(Qt.white)
+        font = QFont()
+        font.setPointSize(6) # Set font size for hover text
+        self.hover_text_item.setFont(font)
         self.hover_text_item.setZValue(100) # Ensure it's on top
         self.hover_text_item.setVisible(False)
         self.scene.addItem(self.hover_text_item)
@@ -458,11 +461,11 @@ class DataStitcherGUI(QMainWindow):
         """)
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.layout = QHBoxLayout(self.central_widget)
+        self.layout = QVBoxLayout(self.central_widget) # Changed to QVBoxLayout
 
         # Image area
         self.image_view = ZoomableView()
-        self.layout.addWidget(self.image_view)
+        self.layout.addWidget(self.image_view, 1) # Added stretch factor to image_view
 
         if stitched_image:
             q_image = QImage(stitched_image.tobytes(), stitched_image.width, stitched_image.height, stitched_image.width * 3, QImage.Format_RGB888)
@@ -470,8 +473,8 @@ class DataStitcherGUI(QMainWindow):
             self.image_view.set_pixmap(pixmap, img_info)
 
         # Legend area
-        self.legend_area = QVBoxLayout()
-        self.layout.addLayout(self.legend_area)
+        self.legend_area = QHBoxLayout() # Changed to QHBoxLayout
+        self.layout.addLayout(self.legend_area) # Legend is added to the main QVBoxLayout
 
         self.legend_label = QLabel("Legend")
         self.legend_area.addWidget(self.legend_label)
