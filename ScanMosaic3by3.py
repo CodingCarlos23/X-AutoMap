@@ -358,16 +358,18 @@ class ZoomableView(QGraphicsView):
             self.scale(zoom_out_factor, zoom_out_factor)
 
     def mouseMoveEvent(self, event):
+        scene_pos = self.mapToScene(event.pos())
+
         if self.drawing_mode and self.start_point and (event.buttons() & Qt.LeftButton):
-            end_point = self.mapToScene(event.pos())
+            end_point = scene_pos
             rect = QRectF(self.start_point, end_point).normalized()
             if self.current_rect:
                 self.current_rect.setRect(rect)
-        else:
-            # Always call super() first to ensure panning works
-            super().mouseMoveEvent(event)
+            return
 
-            scene_pos = self.mapToScene(event.pos())
+        # If not drawing, proceed with original logic
+        super().mouseMoveEvent(event)
+
         self.mouseMoved.emit(scene_pos) # Emit the signal with scene coordinates
 
         # Only handle tooltips if no buttons are pressed (i.e., hovering)
@@ -555,18 +557,30 @@ class DataStitcherGUI(QMainWindow):
         if scene.itemsBoundingRect().isEmpty():
             return
 
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Image", "stitched_3by3.png", "PNG Images (*.png);;All Files (*)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Image", "stitched_3by3_4k.png", "PNG Images (*.png);;All Files (*)")
 
         if file_path:
             if not file_path.lower().endswith('.png'):
                 file_path += '.png'
+
+            source_rect = scene.sceneRect()
             
-            # Create a QImage to render the scene to
-            image = QImage(scene.sceneRect().size().toSize(), QImage.Format_ARGB32)
+            # Define 4K width, calculate height based on aspect ratio
+            target_width = 3840
+            aspect_ratio = source_rect.height() / source_rect.width()
+            target_height = int(target_width * aspect_ratio)
+
+            # Create a QImage with 4K dimensions
+            image = QImage(target_width, target_height, QImage.Format_ARGB32)
             image.fill(Qt.transparent)
 
             painter = QPainter(image)
-            scene.render(painter)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # Render the scene scaled to the new image size
+            target_rect = QRectF(0, 0, target_width, target_height)
+            scene.render(painter, target_rect, source_rect)
+            
             painter.end()
 
             image.save(file_path)
