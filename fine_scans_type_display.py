@@ -154,8 +154,8 @@ if __name__ == "__main__":
     }
     # Define the micron scales for each image
     micron_scales = {
-        "Separate": [1, 1, 1],
-        "Together": [1, 1, 1],
-        "Partial": [1, 1, 1]
+        "Separate": [5.8, 1.8, 4.5],
+        "Together": [2.2, 1.8, 1.5],
+        "Partial": [2.5, 1.2, 3.5]
     }
     create_scan_type_display_image(image_paths, micron_scales, output_path="/home/codingcarlos/Documents/AddGoodSamples/FineScanTypesShowcase.png")

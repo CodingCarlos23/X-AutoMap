@@ -4,10 +4,10 @@ import shutil
 import json
 import io
 import numpy as np
-from PIL import Image, ImageDraw
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSizePolicy, QPushButton, QFileDialog, QShortcut
+from PIL import Image, ImageDraw, ImageFont
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSizePolicy, QPushButton, QFileDialog, QShortcut, QCheckBox
 from PyQt5.QtCore import Qt, QRect
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QKeySequence
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QKeySequence, QFont, QPen
 
 # --- File Path Constants ---
 PROCESSED_SCANS_DIR = "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped"
@@ -28,26 +28,98 @@ class XRFScan:
         return self.group_config["name"]
 
 class SquareLabel(QLabel):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, main_window, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.main_window = main_window
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.union_data = None
+        self.show_text_annotations = False # Renamed and changed purpose
+
+    def setAnnotations(self, data, show_text): # Changed parameter name
+        self.union_data = data
+        self.show_text_annotations = show_text # Updated variable
+        self.update() # Trigger a repaint
 
     def paintEvent(self, event):
         super().paintEvent(event)
         pix = self.pixmap()
         if pix is None or pix.isNull():
             return
+            
         widget_width = self.width()
         widget_height = self.height()
         size = min(widget_width, widget_height)
-        x = (widget_width - size) // 2
-        y = (widget_height - size) // 2
-        target_rect = QRect(x, y, size, size)
-        scaled_pix = pix.scaled(target_rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        x_offset = (widget_width - size) // 2
+        y_offset = (widget_height - size) // 2
+        target_rect = QRect(x_offset, y_offset, size, size)
+        
+        # Maintain aspect ratio of the source pixmap
+        source_size = pix.size()
+        scaled_size = source_size.scaled(target_rect.size(), Qt.KeepAspectRatio)
+        final_rect = QRect(0, 0, scaled_size.width(), scaled_size.height())
+        final_rect.moveCenter(target_rect.center())
+
         painter = QPainter(self)
-        painter.drawPixmap(target_rect, scaled_pix)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.HighQualityAntialiasing, True) # This might help
+        painter.drawPixmap(final_rect, pix) # Draw original pixmap, letting drawPixmap handle scaling
+
+        if self.union_data: # Boxes always drawn if data exists
+            source_rect = pix.rect()
+            x_scale = final_rect.width() / source_rect.width()
+            y_scale = final_rect.height() / source_rect.height()
+
+            pen = QPen(Qt.white)
+            pen.setWidth(self.main_window.BOX_BORDER_THICKNESS) # Use variable
+            painter.setPen(pen)
+            
+            font = QFont()
+            font.setPointSize(self.main_window.ANNOTATION_FONT_SIZE) # Use variable
+            painter.setFont(font)
+
+            tile_w, tile_h = source_rect.width(), source_rect.height()
+
+            for key, item in self.union_data.items():
+                if 'image_center' in item and 'image_length' in item:
+                    x, y = item['image_center']
+                    length = item['image_length']
+                    if x < 0 or y < 0:
+                        x += tile_w / 2
+                        y += tile_h / 2
+                    
+                    half_length = length / 2
+                    box_x = x - half_length
+                    box_y = y - half_length
+
+                    # Scale to target coordinates
+                    target_box_x = final_rect.x() + box_x * x_scale
+                    target_box_y = final_rect.y() + box_y * y_scale
+                    target_box_w = length * x_scale
+                    target_box_h = length * y_scale
+                    
+                    painter.drawRect(int(target_box_x), int(target_box_y), int(target_box_w), int(target_box_h))
+
+                    # Text drawing is now conditional on self.show_text_annotations
+                    if self.show_text_annotations and 'real_center_um' in item and 'real_size_um' in item:
+                        real_center = item['real_center_um']
+                        real_size = item['real_size_um']
+                        text = f"Center: ({real_center[0]:.1f}, {real_center[1]:.1f})\nSize: ({real_size[0]:.1f}, {real_size[1]:.1f})"
+                        
+                        text_x = target_box_x - 10
+                        text_y = target_box_y + target_box_h + self.main_window.ANNOTATION_TEXT_OFFSET_Y # Use variable
+                        
+                        # Draw text with a slight shadow for readability
+                        painter.setPen(Qt.black)
+                        painter.drawText(int(text_x+1), int(text_y+1), text)
+                        painter.setPen(pen) # Use the same pen as the box for text
+                        painter.drawText(int(text_x), int(text_y), text)
 
 class ScansGroupedViewer(QMainWindow):
+    BOX_BORDER_THICKNESS = 4 # For on-screen display
+    EXPORT_BOX_BORDER_THICKNESS = 1 # For export
+    ANNOTATION_FONT_SIZE = 12
+    ANNOTATION_TEXT_OFFSET_Y = 18
     SCAN_GROUPS_CONFIG = {
         "CuCaFe": {
             "name": "Cu, Ca, Fe Group",
@@ -104,6 +176,8 @@ class ScansGroupedViewer(QMainWindow):
 
         self.merged_images = {}
         self.initial_scan_id = 368304
+        self.current_base_image = None
+        self.current_union_data = None
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -130,7 +204,7 @@ class ScansGroupedViewer(QMainWindow):
         content_widget = QWidget()
         content_layout = QHBoxLayout(content_widget)
         main_layout.addWidget(content_widget, 1)
-        self.large_image_label = SquareLabel("Large Image Placeholder")
+        self.large_image_label = SquareLabel(self, "Large Image Placeholder")
         self.large_image_label.setAlignment(Qt.AlignCenter)
         self.large_image_label.setStyleSheet("background-color: #222; border: 1px solid #444;")
         content_layout.addWidget(self.large_image_label, 1)
@@ -139,7 +213,7 @@ class ScansGroupedViewer(QMainWindow):
         self.small_image_labels = []
         for i in range(4):
             for j in range(2):
-                label = SquareLabel(f"Small Image {i*2 + j + 1}")
+                label = SquareLabel(self, f"Small Image {i*2 + j + 1}")
                 label.setAlignment(Qt.AlignCenter)
                 label.setStyleSheet("background-color: #222; border: 1px solid #444;")
                 right_layout.addWidget(label, i, j)
@@ -151,7 +225,13 @@ class ScansGroupedViewer(QMainWindow):
         main_layout.addWidget(footer_widget)
         export_button = QPushButton("Export Merged Images")
         export_button.clicked.connect(self.export_images)
+
+        self.show_box_info_checkbox = QCheckBox("Show Union Box Info")
+        self.show_box_info_checkbox.setStyleSheet("color: white;")
+        self.show_box_info_checkbox.toggled.connect(self.update_main_image_annotations)
+
         footer_layout.addStretch()
+        footer_layout.addWidget(self.show_box_info_checkbox)
         footer_layout.addWidget(export_button)
         footer_layout.addStretch()
 
@@ -262,37 +342,99 @@ class ScansGroupedViewer(QMainWindow):
                 return arr.astype(np.uint8)
 
             rgb_image_np = np.stack([normalize(r_img), normalize(g_img), normalize(b_img)], axis=-1)
-            pil_img = Image.fromarray(rgb_image_np, 'RGB')
+            self.current_base_image = Image.fromarray(rgb_image_np, 'RGB')
+            
             json_path = os.path.join(scan_dir, group_config["json_name"])
-
+            self.current_union_data = None
             if os.path.exists(json_path):
                 with open(json_path, 'r') as f:
-                    union_data = json.load(f)
-                draw = ImageDraw.Draw(pil_img)
-                tile_w, tile_h = pil_img.size
-                for key, item in union_data.items():
-                    if 'image_center' in item and 'image_length' in item:
-                        x, y = item['image_center']
-                        length = item['image_length']
-                        if x < 0 or y < 0:
-                            x += tile_w / 2
-                            y += tile_h / 2
-                        half_length = length / 2
-                        box = [x - half_length, y - half_length, x + half_length, y + half_length]
-                        draw.rectangle(box, outline="white", width=1)
+                    self.current_union_data = json.load(f)
 
-            buffer = io.BytesIO()
-            pil_img.save(buffer, format='PNG')
-            pixmap = QPixmap()
-            pixmap.loadFromData(buffer.getvalue(), 'PNG')
-            self.large_image_label.setPixmap(pixmap)
-            self.merged_images[scan_obj.id] = pil_img
+            self.update_main_image_annotations()
+
         except FileNotFoundError as e:
             print(f"Error loading image: {e}")
             self.large_image_label.setText(f"Error: {e.filename} not found.")
+            self.current_base_image = None
+            self.current_union_data = None
         except Exception as e:
             print(f"An error occurred: {e}")
             self.large_image_label.setText("Error loading image.")
+            self.current_base_image = None
+            self.current_union_data = None
+
+    def update_main_image_annotations(self):
+        # This method no longer draws, it just passes data to the label
+        if not self.current_base_image:
+            return
+
+        # The base image is converted to pixmap and set
+        buffer = io.BytesIO()
+        self.current_base_image.save(buffer, format='PNG')
+        pixmap = QPixmap()
+        pixmap.loadFromData(buffer.getvalue(), 'PNG')
+        self.large_image_label.setPixmap(pixmap)
+
+        # Pass annotation data to the label
+        self.large_image_label.setAnnotations(
+            self.current_union_data,
+            self.show_box_info_checkbox.isChecked()
+        )
+
+        # The self.merged_images dictionary is now only used for the small secondary scans.
+        # The main image for export is generated on-demand in export_images().
+
+    def generate_export_image(self):
+        if not self.current_base_image:
+            return None
+
+        # Create a QImage to draw on at the native resolution of the image.
+        width = self.current_base_image.width
+        height = self.current_base_image.height
+        export_image = QImage(width, height, QImage.Format_ARGB32)
+        export_image.fill(Qt.transparent)
+
+        # Create a QPainter
+        painter = QPainter(export_image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
+
+        # Draw the base image
+        buffer = io.BytesIO()
+        self.current_base_image.save(buffer, format='PNG')
+        pixmap = QPixmap()
+        pixmap.loadFromData(buffer.getvalue(), 'PNG')
+        painter.drawPixmap(0, 0, pixmap)
+
+        # Draw annotations (similar to SquareLabel.paintEvent but without scaling)
+        if self.current_union_data:
+            pen = QPen(Qt.white)
+            pen.setWidth(self.EXPORT_BOX_BORDER_THICKNESS) # Use export-specific variable
+            painter.setPen(pen)
+            
+            font = QFont()
+            font.setPointSize(self.ANNOTATION_FONT_SIZE)
+            painter.setFont(font)
+
+            for key, item in self.current_union_data.items():
+                if 'image_center' in item and 'image_length' in item:
+                    x, y = item['image_center']
+                    length = item['image_length']
+                    if x < 0 or y < 0:
+                        x += width / 2
+                        y += height / 2
+                    
+                    half_length = length / 2
+                    box_x = x - half_length
+                    box_y = y - half_length
+                    
+                    painter.drawRect(int(box_x), int(box_y), int(length), int(length))
+
+
+        
+        painter.end()
+        return export_image
 
     def load_and_display_secondary_image(self, scan_dir, scan_id, group_config, target_label):
         elements = group_config["elements"]
@@ -400,10 +542,10 @@ class ScansGroupedViewer(QMainWindow):
         return True
 
     def export_images(self):
-        if not self.merged_images:
+        if not self.available_scans:
             print("No images to export.")
             return
-        
+
         current_scan_obj = self.available_scans[self.current_scan_index]
         base_save_dir = QFileDialog.getExistingDirectory(self, "Select Directory to Save Images")
 
@@ -412,17 +554,27 @@ class ScansGroupedViewer(QMainWindow):
             save_dir = os.path.join(base_save_dir, folder_name)
             os.makedirs(save_dir, exist_ok=True)
 
-            for scan_id, pil_img in self.merged_images.items():
-                if scan_id == current_scan_obj.id:
-                    file_name = f"merged_scan_{scan_id}.png"
-                else:
-                    file_name = f"merged_detsum_{scan_id}.png"
+            # Export the main image with high quality rendering
+            main_export_image = self.generate_export_image()
+            if main_export_image:
+                file_name = f"merged_scan_{current_scan_obj.id}.png"
                 save_path = os.path.join(save_dir, file_name)
                 try:
-                    pil_img.save(save_path)
+                    main_export_image.save(save_path)
                     print(f"Saved image to {save_path}")
                 except Exception as e:
                     print(f"Error saving image {save_path}: {e}")
+
+            # Export the small secondary images (still using PIL for these)
+            for scan_id, pil_img in self.merged_images.items():
+                if scan_id != current_scan_obj.id:
+                    file_name = f"merged_detsum_{scan_id}.png"
+                    save_path = os.path.join(save_dir, file_name)
+                    try:
+                        pil_img.save(save_path)
+                        print(f"Saved image to {save_path}")
+                    except Exception as e:
+                        print(f"Error saving image {save_path}: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
