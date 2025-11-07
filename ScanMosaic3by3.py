@@ -6,7 +6,7 @@ import json
 from PyQt5.QtWidgets import (
                              QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QLabel, QCheckBox, QGraphicsView, QGraphicsScene, 
-                             QGraphicsPixmapItem, QFrame, QGraphicsRectItem, QGraphicsTextItem)
+                             QGraphicsPixmapItem, QFrame, QGraphicsRectItem, QGraphicsTextItem, QPushButton, QFileDialog)
 from PyQt5.QtCore import Qt, QLineF, QPointF, QRectF, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QPen, QColor, QFont, QPainter
 import subprocess
@@ -231,7 +231,7 @@ class ZoomableView(QGraphicsView):
         overlap_pixels = self.img_info['overlap_pixels']
 
         pen = QPen(QColor(Qt.white))
-        pen.setStyle(Qt.DotLine)
+        pen.setStyle(Qt.SolidLine)
         pen.setWidth(1) 
 
         # Draw internal borders (top and left for each cell)
@@ -505,6 +505,31 @@ class DataStitcherGUI(QMainWindow):
         self.show_union_boxes_checkbox.toggled.connect(self.image_view.set_union_boxes_visible) # Connect signal
 
         self.legend_area.addStretch()
+
+        self.export_button = QPushButton("Export 3by3 as PNG")
+        self.legend_area.addWidget(self.export_button)
+        self.export_button.clicked.connect(self.export_image)
+
+    def export_image(self):
+        scene = self.image_view.scene
+        if scene.itemsBoundingRect().isEmpty():
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Image", "stitched_3by3.png", "PNG Images (*.png);;All Files (*)")
+
+        if file_path:
+            if not file_path.lower().endswith('.png'):
+                file_path += '.png'
+            
+            # Create a QImage to render the scene to
+            image = QImage(scene.sceneRect().size().toSize(), QImage.Format_ARGB32)
+            image.fill(Qt.transparent)
+
+            painter = QPainter(image)
+            scene.render(painter)
+            painter.end()
+
+            image.save(file_path)
 
     def update_mouse_coords_label(self, pos):
         # Calculate real-world coordinates
