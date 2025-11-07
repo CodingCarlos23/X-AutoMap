@@ -38,10 +38,10 @@ elements = {
 
 # === NORMALIZATION ===
 def normalize(arr):
-    arr = arr - np.min(arr)
-    if np.max(arr) > 0:
-        arr = arr / np.max(arr)
-    return (arr * 255).astype(np.uint8)
+    arr = arr.astype(np.float32)
+    if arr.max() > arr.min():
+        arr = (arr - arr.min()) / (arr.max() - arr.min()) * 255
+    return arr.astype(np.uint8)
 
 # === MERGE EACH FOLDER ===
 def merge_folder(scan_folder):
@@ -145,8 +145,12 @@ def stitch_images(scan_ids, grid_size=(8, 8), draw_tile_borders=False,
                                 union_data = json.load(f)
 
                             for box_info in union_data.values():
-                                cx_img = box_info["image_center"][0] * scale
-                                cy_img = box_info["image_center"][1] * scale
+                                x, y = box_info['image_center']
+                                if x < 0 or y < 0:
+                                    x += tile_w / 2
+                                    y += tile_h / 2
+                                cx_img = x * scale
+                                cy_img = y * scale
                                 L_img = box_info["image_length"] * scale
 
                                 x_start_mosaic = x_tile + cx_img - L_img / 2
