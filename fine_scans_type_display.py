@@ -1,7 +1,7 @@
 
 from PIL import Image, ImageDraw, ImageFont
 
-def create_scan_type_display_image(image_paths, output_path="scan_type_display.png"):
+def create_scan_type_display_image(image_paths, micron_scales, output_path="scan_type_display.png"):
     """
     Creates an image with a white background, a 3x3 grid of images from TIFF files,
     and column titles "Separate", "Together", "Partial".
@@ -11,11 +11,14 @@ def create_scan_type_display_image(image_paths, output_path="scan_type_display.p
     padding = 30
     main_title_height = 80
     column_title_height = 50
+    legend_height = 30 # New height for the legend
+    micron_scale_text_height = 20 # Height for the micron scale text
+    scale_bar_height = 10 # Height for the scale bar
     num_columns = 3
     num_rows = 3
 
     image_width = num_columns * box_size + (num_columns + 1) * padding
-    image_height = num_rows * box_size + (num_rows + 1) * padding + main_title_height + column_title_height
+    image_height = num_rows * (box_size + micron_scale_text_height + scale_bar_height) + (num_rows + 1) * padding + main_title_height + column_title_height + legend_height
 
     background_color = (255, 255, 255)  # White
     box_color = (0, 0, 0)  # Black
@@ -30,10 +33,12 @@ def create_scan_type_display_image(image_paths, output_path="scan_type_display.p
         main_font = ImageFont.truetype("arial.ttf", 30)
         subtitle_font = ImageFont.truetype("arial.ttf", 15)
         column_font = ImageFont.truetype("arial.ttf", 20)  # Adjust font size as needed
+        micron_font = ImageFont.truetype("arial.ttf", 12)
     except IOError:
         main_font = ImageFont.load_default()
         subtitle_font = ImageFont.load_default()
         column_font = ImageFont.load_default()
+        micron_font = ImageFont.load_default()
 
     # Main title
     main_title = "Fine Scan Different Types"
@@ -45,17 +50,43 @@ def create_scan_type_display_image(image_paths, output_path="scan_type_display.p
 
     # Subtitle
     subtitle = "Elements Fe Ca Si"
-    y += 40  # Spacing below main title
+    y_subtitle = y + 40  # Spacing below main title
     bbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
     text_width = bbox[2] - bbox[0]
-    draw.text((x - text_width // 2, y), subtitle, font=subtitle_font, fill=text_color)
+    draw.text((x - text_width // 2, y_subtitle), subtitle, font=subtitle_font, fill=text_color)
+
+    # Color Legend
+    y_legend = y_subtitle + 20 # Spacing below subtitle
+    
+    # Calculate total width of legend text to center it
+    ca_bbox = draw.textbbox((0,0), "Ca (Red)", font=subtitle_font)
+    fe_bbox = draw.textbbox((0,0), "Fe (Green)", font=subtitle_font)
+    si_bbox = draw.textbbox((0,0), "Si (Blue)", font=subtitle_font)
+
+    ca_width = ca_bbox[2] - ca_bbox[0]
+    fe_width = fe_bbox[2] - fe_bbox[0]
+    si_width = si_bbox[2] - si_bbox[0]
+
+    total_legend_width = ca_width + fe_width + si_width + 20 # Add some spacing between elements
+    start_x_legend = (image_width - total_legend_width) // 2
+
+    # Draw "Ca (Red)"
+    draw.text((start_x_legend, y_legend), "Ca (Red)", font=subtitle_font, fill=(255, 0, 0))
+    start_x_legend += ca_width + 10
+
+    # Draw "Fe (Green)"
+    draw.text((start_x_legend, y_legend), "Fe (Green)", font=subtitle_font, fill=(0, 128, 0)) # Darker green for visibility
+    start_x_legend += fe_width + 10
+
+    # Draw "Si (Blue)"
+    draw.text((start_x_legend, y_legend), "Si (Blue)", font=subtitle_font, fill=(0, 0, 255))
 
 
     # Column titles
     column_titles = ["Separate", "Together", "Partial"]
     for i, title in enumerate(column_titles):
         x = padding + i * (box_size + padding) + box_size // 2
-        y = main_title_height + column_title_height // 2
+        y = main_title_height + column_title_height // 2 + legend_height # Adjust y for legend
         # Center the text
         bbox = draw.textbbox((0, 0), title, font=column_font)
         text_width = bbox[2] - bbox[0]
@@ -66,7 +97,7 @@ def create_scan_type_display_image(image_paths, output_path="scan_type_display.p
     for col, title in enumerate(column_titles):
         for row in range(num_rows):
             x1 = padding + col * (box_size + padding)
-            y1 = main_title_height + column_title_height + row * (box_size + padding)
+            y1 = main_title_height + column_title_height + legend_height + row * (box_size + padding + micron_scale_text_height + scale_bar_height) # Adjust y for legend and micron scale
             
             file_path = image_paths[title][row]
             
@@ -80,6 +111,22 @@ def create_scan_type_display_image(image_paths, output_path="scan_type_display.p
                 x2 = x1 + box_size
                 y2 = y1 + box_size
                 draw.rectangle([x1, y1, x2, y2], fill=box_color)
+
+            # Draw the micron scale bar (caliper style)
+            bar_y = y1 + box_size + 9 # Horizontal bar 9 pixels below image
+            vertical_line_start_y = y1 + box_size + 4 # Vertical lines start 6 pixels below image
+            # Horizontal line
+            draw.line([(x1, bar_y), (x1 + box_size, bar_y)], fill=box_color, width=1)
+            # Vertical lines with space
+            draw.line([(x1, vertical_line_start_y), (x1, bar_y)], fill=box_color, width=1)
+            draw.line([(x1 + box_size, vertical_line_start_y), (x1 + box_size, bar_y)], fill=box_color, width=1)
+
+            # Draw the micron scale text
+            scale = micron_scales[title][row]
+            scale_text = f"{scale}_microns"
+            bbox = draw.textbbox((0, 0), scale_text, font=micron_font)
+            text_width = bbox[2] - bbox[0]
+            draw.text((x1 + (box_size - text_width) // 2, bar_y + 2), scale_text, font=micron_font, fill=text_color)
 
 
     # Save the image
@@ -105,4 +152,10 @@ if __name__ == "__main__":
             "/home/codingcarlos/Documents/AddGoodSamples/Partial/scan_369116_Coarse_Fine_Scans/merged_detsum_369117.png"
         ]
     }
-    create_scan_type_display_image(image_paths, output_path="/home/codingcarlos/Documents/AddGoodSamples/FineScanTypesShowcase.png")
+    # Define the micron scales for each image
+    micron_scales = {
+        "Separate": [1, 1, 1],
+        "Together": [1, 1, 1],
+        "Partial": [1, 1, 1]
+    }
+    create_scan_type_display_image(image_paths, micron_scales, output_path="/home/codingcarlos/Documents/AddGoodSamples/FineScanTypesShowcase.png")
