@@ -203,9 +203,21 @@ class ZoomableView(QGraphicsView):
 
         self.borders = []
         self.union_boxes = []
+        self.drawn_boxes = [] # For user-drawn boxes
         self.img_info = None # To store img_width, img_height, grid_size, overlap_pixels
         self.fine_path_base = "" # Store the base path for fine scans
         self.info_path = "" # Store the base path for coarse scan info
+
+        self.drawing_mode = False
+        self.start_point = None
+        self.current_rect = None
+
+    def set_drawing_mode(self, enabled):
+        self.drawing_mode = enabled
+        if self.drawing_mode:
+            self.setDragMode(QGraphicsView.NoDrag)
+        else:
+            self.setDragMode(QGraphicsView.ScrollHandDrag)
 
     def set_pixmap(self, pixmap, img_info=None):
         self._pixmap_item.setPixmap(pixmap)
@@ -346,10 +358,16 @@ class ZoomableView(QGraphicsView):
             self.scale(zoom_out_factor, zoom_out_factor)
 
     def mouseMoveEvent(self, event):
-        # Always call super() first to ensure panning works
-        super().mouseMoveEvent(event)
+        if self.drawing_mode and self.start_point and (event.buttons() & Qt.LeftButton):
+            end_point = self.mapToScene(event.pos())
+            rect = QRectF(self.start_point, end_point).normalized()
+            if self.current_rect:
+                self.current_rect.setRect(rect)
+        else:
+            # Always call super() first to ensure panning works
+            super().mouseMoveEvent(event)
 
-        scene_pos = self.mapToScene(event.pos())
+            scene_pos = self.mapToScene(event.pos())
         self.mouseMoved.emit(scene_pos) # Emit the signal with scene coordinates
 
         # Only handle tooltips if no buttons are pressed (i.e., hovering)
@@ -395,11 +413,28 @@ class ZoomableView(QGraphicsView):
             self.hover_text_item.setVisible(False)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            item = self.itemAt(event.pos())
-            if isinstance(item, HoverableGraphicsRectItem):
-                self.open_fine_scan_folder(item.scan_id)
-        super().mousePressEvent(event)
+        if self.drawing_mode and event.button() == Qt.LeftButton:
+            self.start_point = self.mapToScene(event.pos())
+            pen = QPen(QColor(Qt.yellow))
+            pen.setStyle(Qt.DotLine)
+            pen.setWidth(2)
+            self.current_rect = QGraphicsRectItem(QRectF(self.start_point, self.start_point))
+            self.current_rect.setPen(pen)
+            self.scene.addItem(self.current_rect)
+            self.drawn_boxes.append(self.current_rect)
+        else:
+            if event.button() == Qt.LeftButton:
+                item = self.itemAt(event.pos())
+                if isinstance(item, HoverableGraphicsRectItem):
+                    self.open_fine_scan_folder(item.scan_id)
+            super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.drawing_mode and self.start_point and event.button() == Qt.LeftButton:
+            self.start_point = None
+            self.current_rect = None
+        else:
+            super().mouseReleaseEvent(event)
 
     def open_fine_scan_folder(self, scan_id):
         if not self.fine_path_base:
@@ -509,6 +544,11 @@ class DataStitcherGUI(QMainWindow):
         self.export_button = QPushButton("Export 3by3 as PNG")
         self.legend_area.addWidget(self.export_button)
         self.export_button.clicked.connect(self.export_image)
+
+        self.draw_box_button = QPushButton("Draw Box")
+        self.draw_box_button.setCheckable(True)
+        self.legend_area.addWidget(self.draw_box_button)
+        self.draw_box_button.toggled.connect(self.image_view.set_drawing_mode)
 
     def export_image(self):
         scene = self.image_view.scene

@@ -1,9 +1,9 @@
 
 from PIL import Image, ImageDraw, ImageFont
 
-def create_scan_type_display_image(output_path="scan_type_display.png"):
+def create_scan_type_display_image(image_paths, output_path="scan_type_display.png"):
     """
-    Creates an image with a white background, a 3x3 grid of black boxes,
+    Creates an image with a white background, a 3x3 grid of images from TIFF files,
     and column titles "Separate", "Together", "Partial".
     """
     # Image dimensions and colors
@@ -62,18 +62,47 @@ def create_scan_type_display_image(output_path="scan_type_display.png"):
         text_height = bbox[3] - bbox[1]
         draw.text((x - text_width // 2, y - text_height // 2), title, font=column_font, fill=text_color)
 
-    # Draw the 3x3 grid of black boxes
-    for row in range(num_rows):
-        for col in range(num_columns):
+    # Draw the 3x3 grid of images
+    for col, title in enumerate(column_titles):
+        for row in range(num_rows):
             x1 = padding + col * (box_size + padding)
             y1 = main_title_height + column_title_height + row * (box_size + padding)
-            x2 = x1 + box_size
-            y2 = y1 + box_size
-            draw.rectangle([x1, y1, x2, y2], fill=box_color)
+            
+            file_path = image_paths[title][row]
+            
+            try:
+                # Open and resize the TIFF image
+                img = Image.open(file_path)
+                img = img.resize((box_size, box_size))
+                image.paste(img, (x1, y1))
+            except (IOError, FileNotFoundError):
+                # Draw a black box if the image can't be loaded
+                x2 = x1 + box_size
+                y2 = y1 + box_size
+                draw.rectangle([x1, y1, x2, y2], fill=box_color)
+
 
     # Save the image
     image.save(output_path)
     print(f"Image saved to {output_path}")
 
 if __name__ == "__main__":
-    create_scan_type_display_image(output_path="/home/codingcarlos/Documents/AddGoodSamples/FineScanTypesShowcase.png")
+    # Define the file paths for the TIFF images
+    image_paths = {
+        "Separate": [
+            "/home/codingcarlos/Documents/AddGoodSamples/Seperate/scan_368604_Coarse_Fine_Scans/merged_detsum_368606.png",
+            "/home/codingcarlos/Documents/AddGoodSamples/Seperate/scan_369139_Coarse_Fine_Scans/merged_detsum_369140.png",
+            "/home/codingcarlos/Documents/AddGoodSamples/Seperate/scan_369155_Coarse_Fine_Scans/merged_detsum_369158.png"
+        ],
+        "Together": [
+            "/home/codingcarlos/Documents/AddGoodSamples/Together/scan_368612_Coarse_Fine_Scans/merged_detsum_368613.png",
+            "/home/codingcarlos/Documents/AddGoodSamples/Together/scan_368950_Coarse_Fine_Scans/merged_detsum_368953.png",
+            "/home/codingcarlos/Documents/AddGoodSamples/Together/scan_369089_Coarse_Fine_Scans/merged_detsum_369090.png"
+        ],
+        "Partial": [
+            "/home/codingcarlos/Documents/AddGoodSamples/Partial/scan_369068_Coarse_Fine_Scans/merged_detsum_369071.png",
+            "/home/codingcarlos/Documents/AddGoodSamples/Partial/scan_369009_Coarse_Fine_Scans/merged_detsum_369012.png",
+            "/home/codingcarlos/Documents/AddGoodSamples/Partial/scan_369116_Coarse_Fine_Scans/merged_detsum_369117.png"
+        ]
+    }
+    create_scan_type_display_image(image_paths, output_path="/home/codingcarlos/Documents/AddGoodSamples/FineScanTypesShowcase.png")
