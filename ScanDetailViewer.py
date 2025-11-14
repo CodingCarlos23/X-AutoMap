@@ -135,6 +135,7 @@ class ScansGroupedViewer(QMainWindow):
             ],
             "elements": ["Cu", "Ca", "Fe"],
             "elements_map": {"r": "Cu", "g": "Ca", "b": "Fe"},
+            "folder_suffix": "CuCaFe",
             "json_name": "unions_output.json",
             "json_path_template": os.path.join(INFO_PATH, "automap_{scan_id}"),
             "coarse_file_template": "detsum_{element}_K_norm.tiff",
@@ -157,12 +158,36 @@ class ScansGroupedViewer(QMainWindow):
             ],
             "elements": ["Ca", "Fe", "Si"],
             "elements_map": {"r": "Ca", "g": "Fe", "b": "Si"},
+            "folder_suffix": "FeCaSi",
             "json_name": "unions_output_FeCaSi.json",
             "coarse_file_template": "scan_{scan_id}_{element}.tiff",
             "coarse_path_template": os.path.join(RAW_PRIMARY_SCAN_DIR, "automap_{scan_id}"),
             "fine_file_template": "detsum_{element}_K_norm.tiff",
             "fine_path_template": os.path.join(RAW_SECONDARY_SCAN_DIR, "output_tiff_scan2D_{fine_id}"),
             "fine_id_logic": "json_boxes"
+        },
+        "CrFeMn": {
+            "name": "Cr, Fe, Mn Group",
+            "ids": [
+                367582, 367589, 367592, 367596, 367600, 367609, 367614, 367622,
+                367630, 367634, 367638, 367641, 367646, 367653, 367658, 367663,
+                367667, 367671, 367675, 367680, 367686, 367692, 367698, 367703,
+                367710, 367715, 367720, 367726, 367733, 367741, 367744, 367748,
+                367754, 367760, 367767, 367772, 367780, 367786, 367789, 367795,
+                367798, 367803, 367807, 367813, 367816, 367819, 367825, 367830,
+                367837, 367846, 367851, 367857, 367862, 367870, 367873, 367880,
+                367885, 367890, 367897, 367899, 367903, 367910, 367915, 367921
+            ],
+            "elements": ["Cr", "Fe", "Mn"],
+            "elements_map": {"r": "Cr", "g": "Fe", "b": "Mn"},
+            "folder_suffix": "CrFeMn",
+            "json_name": "unions_output.json",
+            "json_path_template": os.path.join(INFO_PATH, "automap_{scan_id}"),
+            "coarse_file_template": "detsum_{element}_K_norm.tiff",
+            "coarse_path_template": os.path.join(RAW_SECONDARY_SCAN_DIR, "output_tiff_scan2D_{scan_id}"),
+            "fine_file_template": "detsum_{element}_K_norm.tiff",
+            "fine_path_template": os.path.join(RAW_SECONDARY_SCAN_DIR, "output_tiff_scan2D_{fine_id}"),
+            "fine_id_logic": "range_between_coarse"
         }
     }
 
@@ -245,37 +270,34 @@ class ScansGroupedViewer(QMainWindow):
         self.shortcut_right.activated.connect(lambda: self.next_button.isEnabled() and self.show_next_scan())
 
         # --- REFACTORED Data Processing and Display ---
-        all_scans_dict = {}
-        group_order = ["CuCaFe", "FeCaSi"]
+        all_scans = []
+        group_order = ["CuCaFe", "FeCaSi", "CrFeMn"]
 
         for group_key in group_order:
             group_config = self.SCAN_GROUPS_CONFIG[group_key]
             coarse_ids = group_config["ids"]
             if group_config["fine_id_logic"] == "range_between_coarse":
                 for i, coarse_id in enumerate(coarse_ids):
-                    if coarse_id in all_scans_dict: continue
                     scan_obj = XRFScan(coarse_id, group_config)
                     next_coarse_id = coarse_ids[i + 1] if i + 1 < len(coarse_ids) else coarse_id + 8
                     scan_obj.fine_scan_ids = list(range(coarse_id + 1, next_coarse_id))
-                    all_scans_dict[coarse_id] = scan_obj
+                    all_scans.append(scan_obj)
             else:
                 for coarse_id in coarse_ids:
-                    if coarse_id in all_scans_dict: continue
                     scan_obj = XRFScan(coarse_id, group_config)
-                    all_scans_dict[coarse_id] = scan_obj
+                    all_scans.append(scan_obj)
         
         self.available_scans = []
         self.failed_scans = []
-        sorted_ids = sorted(all_scans_dict.keys())
+        sorted_scans = sorted(all_scans, key=lambda scan: scan.id)
         self.prev_button.setEnabled(False)
         self.next_button.setEnabled(False)
 
-        for scan_id in sorted_ids:
-            scan_obj = all_scans_dict[scan_id]
+        for scan_obj in sorted_scans:
             if self.gather_data_for_scan(scan_obj):
                 self.available_scans.append(scan_obj)
             else:
-                self.failed_scans.append(scan_id)
+                self.failed_scans.append(f"{scan_obj.id} ({scan_obj.group_name})")
 
         self.current_scan_index = 0
         if self.available_scans:
@@ -290,8 +312,8 @@ class ScansGroupedViewer(QMainWindow):
         if self.failed_scans:
             print("\n--- Data Gathering Summary ---")
             print("Could not find source data for the following scan IDs:")
-            for scan_id in self.failed_scans:
-                print(f"- {scan_id}")
+            for scan_desc in self.failed_scans:
+                print(f"- {scan_desc}")
 
     def display_scan(self, scan_obj):
         self.scan_id_label.setText(f"Scan ID: {scan_obj.id} ({scan_obj.group_name})")
@@ -302,7 +324,7 @@ class ScansGroupedViewer(QMainWindow):
             label.setPixmap(QPixmap())
             label.setText("")
 
-        scan_dir = os.path.join(PROCESSED_SCANS_DIR, str(scan_obj.id))
+        scan_dir = self.get_processed_scan_dir(scan_obj)
         if not os.path.isdir(scan_dir):
             self.large_image_label.setText(f"Error: Data for scan {scan_obj.id} not found.")
             return
@@ -323,6 +345,18 @@ class ScansGroupedViewer(QMainWindow):
         if self.current_scan_index >= len(self.available_scans):
             self.current_scan_index = 0
         self.display_scan(self.available_scans[self.current_scan_index])
+
+    def get_processed_scan_dir(self, scan_obj, allow_legacy=True):
+        """Return the on-disk directory for the processed scan."""
+        suffix = scan_obj.group_config.get("folder_suffix") or "".join(scan_obj.group_config["elements"])
+        preferred_dir = os.path.join(PROCESSED_SCANS_DIR, f"{scan_obj.id}_{suffix}")
+        if not allow_legacy:
+            return preferred_dir
+
+        legacy_dir = os.path.join(PROCESSED_SCANS_DIR, str(scan_obj.id))
+        if os.path.isdir(preferred_dir) or not os.path.isdir(legacy_dir):
+            return preferred_dir
+        return legacy_dir
 
     def load_and_display_merged_image(self, scan_dir, scan_obj):
         group_config = scan_obj.group_config
@@ -475,7 +509,7 @@ class ScansGroupedViewer(QMainWindow):
             print(f"Source directory not found: {src_parent_dir}")
             return None
 
-        scan_dest_dir = os.path.join(PROCESSED_SCANS_DIR, str(scan_id))
+        scan_dest_dir = self.get_processed_scan_dir(scan_obj, allow_legacy=False)
         os.makedirs(scan_dest_dir, exist_ok=True)
 
         for element in group_config["elements"]:
@@ -499,7 +533,7 @@ class ScansGroupedViewer(QMainWindow):
 
     def copy_secondary_scans(self, scan_obj):
         group_config = scan_obj.group_config
-        dest_dir = os.path.join(PROCESSED_SCANS_DIR, str(scan_obj.id))
+        dest_dir = self.get_processed_scan_dir(scan_obj, allow_legacy=False)
 
         for fine_id in scan_obj.fine_scan_ids:
             src_dir = group_config["fine_path_template"].format(fine_id=fine_id)
