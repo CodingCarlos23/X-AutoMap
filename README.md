@@ -28,6 +28,9 @@ X-AutoMap uses OpenCV driven blob detection to isolate areas of interest, then m
 3. Fine scans execute over those AOIs and every TIFF plus JSON artifact is saved into element-specific folders named after the scan number (for example `data/scans_grouped/367582_CuCaFe`).
 
 ### Headless automation
+
+![Workflow overview](diagrams/coarse_fine_scan_example.png)
+
 1. Place `initial_scan.json` (and any supporting files) into `data/input/`.
 2. Adjust `real_or_test` at the top of `main_headless.py` (`0` = coarse scan test mode, `1` = grid-scan mode).
 3. Run `python main_headless.py`. The script loads parameters, triggers the appropriate scan loop.
