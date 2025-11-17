@@ -10,10 +10,9 @@ X-AutoMap uses OpenCV driven blob detection to isolate areas of interest, then m
 
 ## About the Codebase
 
-- **Interactive GUI (`main.py`)** – PyQt-based desktop app where users select directories, configure microns-per-pixel, adjust per-element thresholds, visualize blobs/unions, and export queue-ready JSON. `AppState` centralizes paths, calibration values, and cached blobs, while `utils.py` provides operations such as normalization, morphology, entropy calculations, and queue submission helpers.
-- **Automation utilities (`utils.py`, `main_headless.py`, `app_state.py`)** – Wrappers around Bluesky’s Queue Server (`BPlan`, `REManagerAPI`) plus helper routines (`headless_send_queue_coarse_scan`, `headless_send_queue_fine_scan`, `save_each_blob_as_individual_scan`, etc.) that watch the `data/input` directory for JSON instructions and send scans without launching the GUI.
-- **Visualization tools (`ScanDetailViewer.py`, `ScanMosaicViewer.py`, `ScanMosaic3by3.py`, `stitched_grid_8_by_8.py`)** – Standalone viewers for reviewing merged coarse scans, stitched grids, and 3×3 or 8x8 mosaics. The detail viewer now supports multiple element groupings (CuCaFe, FeCaSi, CrFeMn) and keeps each processed scan in a group-specific folder for clarity.
-- **Processing scripts (`fine_scan_organizer.py`, `fine_scans_type_display.py`, `fine_scan_organizer.py`)** – Command-line helpers that batch-merge TIFF channels into RGB PNGs, organize outputs into ID ranges, and create marketing/QA panels illustrating representative fine-scan types.
+- **Interactive GUI (`main.py`)** – PyQt-based desktop app where users select directories, configure microns-per-pixel, adjust per-element thresholds, visualize blobs/unions, and export queue-ready JSON. `core.AppState` centralizes paths, calibration values, and cached blobs, while `utils.py` provides operations such as normalization, morphology, entropy calculations, and queue submission helpers.
+- **Automation utilities (`utils.py`, `main_headless.py`, `core/app_state.py`)** – Wrappers around Bluesky’s Queue Server (`BPlan`, `REManagerAPI`) plus helper routines (`headless_send_queue_coarse_scan`, `headless_send_queue_fine_scan`, `save_each_blob_as_individual_scan`, etc.) that watch the `data/input` directory for JSON instructions and send scans without launching the GUI.
+- **Visualization tools (`viewers/ScanDetailViewer.py`, `viewers/ScanMosaicViewer.py`, `viewers/ScanMosaic3by3.py`, `viewers/stitched_grid_8_by_8.py`, `viewers/fine_scans_type_display.py`, `viewers/fine_scan_organizer.py`)** – Standalone viewers and helper scripts for reviewing merged coarse scans, stitched grids, 3×3 or 8×8 mosaics, and preparing showcase panels or bulk RGB exports. The detail viewer now supports multiple element groupings (CuCaFe, FeCaSi, CrFeMn) and keeps each processed scan in a group-specific folder for clarity.
 
 ## Usage
 
@@ -36,12 +35,13 @@ X-AutoMap uses OpenCV driven blob detection to isolate areas of interest, then m
 3. Run `python main_headless.py`. The script loads parameters, triggers the appropriate scan loop.
 
 ### Reviewing processed scans
-- **Detailed viewer:** `python ScanDetailViewer.py` loads merged coarse scans from `data/scans_grouped/SCANID_<Elements>` folders, overlays union boxes, and displays associated fine scans. Use the arrow keys or buttons to navigate between scans and element groups.
-- **Stitched mosaics:** `python ScanMosaicViewer.py` or `python ScanMosaic3by3.py` create large grids that preserve box annotations, useful for spotting spatial trends across the wafer.
-- **Fine-scan typology display:** `python fine_scans_type_display.py` builds a 3×3 showcase image that demonstrates “Separate/Together/Partial” behaviors along with scale bars.
+- **Detailed viewer:** `python viewers/ScanDetailViewer.py` loads merged coarse scans from `data/scans_grouped/SCANID_<Elements>` folders, overlays union boxes, and displays associated fine scans. Use the arrow keys or buttons to navigate between scans and element groups.
+- **Stitched mosaics:** `python viewers/ScanMosaicViewer.py` or `python viewers/ScanMosaic3by3.py` create large grids that preserve box annotations, useful for spotting spatial trends across the wafer.
+- **Fine-scan typology display:** `python viewers/fine_scans_type_display.py` builds a 3×3 showcase image that demonstrates “Separate/Together/Partial” behaviors along with scale bars.
+- **Bulk RGB generator:** `python viewers/fine_scan_organizer.py` merges Ca/Fe/Cu (etc.) TIFF channels into normalized RGB PNGs organized by scan ID ranges.
 
 ### Generating RGB composites for batches
-Run `python fine_scan_organizer.py` to iterate over predefined scan ranges, merge Ca/Fe/Cu (etc) TIFF channels, and write normalized RGB PNGs into organized subdirectories under `~/Data/FineImages`.
+Run `python viewers/fine_scan_organizer.py` to iterate over predefined scan ranges, merge Ca/Fe/Cu (etc) TIFF channels, and write normalized RGB PNGs into organized subdirectories under `~/Data/FineImages`.
 
 ## Repository layout
 
@@ -49,7 +49,6 @@ Run `python fine_scan_organizer.py` to iterate over predefined scan ranges, merg
 | --- | --- |
 | `main.py` | Interactive Qt application |
 | `main_headless.py` | Non-GUI automation entry point |
-| `ScanDetailViewer.py` | Review tool for coarse and fine scans grouped by element bundle |
 | `utils.py` | Blob detection, normalization, Bluesky queue helpers |
-| `ScanMosaicViewer.py`, `ScanMosaic3by3.py`, `stitched_grid_8_by_8.py` | Mosaic/overview viewers |
-| `fine_scan_organizer.py`, `fine_scans_type_display.py` | Batch processing & visualization utilities |
+| `core/` | Core runtime modules (`app_state.py`) |
+| `viewers/` | Standalone visualization and helper scripts (`ScanDetailViewer.py`, `ScanMosaicViewer.py`, `ScanMosaic3by3.py`, `stitched_grid_8_by_8.py`, `fine_scans_type_display.py`, `fine_scan_organizer.py`, plus `ScanDetailViewerFilePath.json`) |

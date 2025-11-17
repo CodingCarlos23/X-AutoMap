@@ -9,11 +9,42 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHB
 from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QKeySequence, QFont, QPen
 
-# --- File Path Constants ---
-PROCESSED_SCANS_DIR = "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped"
-RAW_PRIMARY_SCAN_DIR = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3"
-RAW_SECONDARY_SCAN_DIR = os.path.join(RAW_PRIMARY_SCAN_DIR, "all_xrf")
-INFO_PATH = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/data/user_macros"
+# --- File Path Configuration ---
+CONFIG_FILENAME = "ScanDetailViewerFilePath.json"
+PATH_CONFIG_FILE = os.path.join(os.path.dirname(__file__), CONFIG_FILENAME)
+
+DEFAULT_PATH_CONFIG = {
+    "PROCESSED_SCANS_DIR": "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped",
+    "RAW_PRIMARY_SCAN_DIR": "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3",
+    "RAW_SECONDARY_SCAN_DIR": "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf",
+    "INFO_PATH": "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/data/user_macros",
+}
+
+
+def load_path_config():
+    """Load path overrides from ScanDetailViewerFilePath.json if available."""
+    config = DEFAULT_PATH_CONFIG.copy()
+    try:
+        with open(PATH_CONFIG_FILE, "r") as fp:
+            file_config = json.load(fp)
+            if isinstance(file_config, dict):
+                for key, value in file_config.items():
+                    if key in config and isinstance(value, str) and value:
+                        config[key] = value
+            else:
+                print(f"Warning: {CONFIG_FILENAME} must contain a JSON object; using defaults.")
+    except FileNotFoundError:
+        print(f"Warning: {CONFIG_FILENAME} not found; using default path configuration.")
+    except json.JSONDecodeError as exc:
+        print(f"Warning: Could not parse {CONFIG_FILENAME}: {exc}; using defaults.")
+    return config
+
+
+PATH_CONFIG = load_path_config()
+PROCESSED_SCANS_DIR = PATH_CONFIG["PROCESSED_SCANS_DIR"]
+RAW_PRIMARY_SCAN_DIR = PATH_CONFIG["RAW_PRIMARY_SCAN_DIR"]
+RAW_SECONDARY_SCAN_DIR = PATH_CONFIG["RAW_SECONDARY_SCAN_DIR"]
+INFO_PATH = PATH_CONFIG["INFO_PATH"]
 
 # --- Helper Classes ---
 class XRFScan:

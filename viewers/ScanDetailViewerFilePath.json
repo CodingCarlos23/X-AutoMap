@@ -1,0 +1,6 @@
+{
+  "PROCESSED_SCANS_DIR": "/home/codingcarlos/Documents/github/SULI-2025-Summer/data/scans_grouped",
+  "RAW_PRIMARY_SCAN_DIR": "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3",
+  "RAW_SECONDARY_SCAN_DIR": "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf",
+  "INFO_PATH": "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/data/user_macros"
+}
