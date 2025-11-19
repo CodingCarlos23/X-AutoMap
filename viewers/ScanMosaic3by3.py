@@ -488,7 +488,7 @@ class ZoomableView(QGraphicsView):
             print(f"No fine scan folder found for scan ID: {scan_id} in {self.fine_path_base}")
 
 class DataStitcherGUI(QMainWindow):
-    def __init__(self, stitched_image=None, img_info=None):
+    def __init__(self, base_root, scan_id_pairs, view_modes, scan_folders_template, info_path, fine_path):
         super().__init__()
         self.setWindowTitle("Data Stitcher")
         self.setStyleSheet(
@@ -500,6 +500,15 @@ class DataStitcherGUI(QMainWindow):
             QPushButton:hover { background-color: #555; }
             QPushButton:disabled { background-color: #222; color: #888; border: 1px solid #444; }
             """)
+
+        self.base_root = base_root
+        self.scan_id_pairs = scan_id_pairs
+        self.view_modes = view_modes or []
+        self.scan_folders_template = scan_folders_template
+        self.info_path = info_path
+        self.fine_path = fine_path
+        self.current_view_index = 0
+
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget) # Changed to QVBoxLayout
@@ -508,17 +517,15 @@ class DataStitcherGUI(QMainWindow):
         self.image_view = ZoomableView()
         self.layout.addWidget(self.image_view, 1) # Added stretch factor to image_view
 
-        if stitched_image:
-            q_image = QImage(stitched_image.tobytes(), stitched_image.width, stitched_image.height, stitched_image.width * 3, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image)
-            self.image_view.set_pixmap(pixmap, img_info)
-
         # Legend area
         self.legend_area = QHBoxLayout() # Changed to QHBoxLayout
         self.layout.addLayout(self.legend_area) # Legend is added to the main QVBoxLayout
 
         self.legend_label = QLabel("Legend")
         self.legend_area.addWidget(self.legend_label)
+
+        self.view_label = QLabel("View: -")
+        self.legend_area.addWidget(self.view_label)
 
         self.mouse_coords_label = QLabel("Mouse Coords: (X: -, Y: -) | Real: (X: -, Y: -)")
         self.legend_area.addWidget(self.mouse_coords_label)
@@ -531,8 +538,6 @@ class DataStitcherGUI(QMainWindow):
 
         self.image_view.mouseMoved.connect(self.update_mouse_coords_label)
 
-
-
         self.show_borders_checkbox = QCheckBox("Show Borders")
         self.legend_area.addWidget(self.show_borders_checkbox)
         self.show_borders_checkbox.toggled.connect(self.image_view.set_borders_visible)
@@ -540,6 +545,10 @@ class DataStitcherGUI(QMainWindow):
         self.show_union_boxes_checkbox = QCheckBox("Show Union Boxes") # New checkbox
         self.legend_area.addWidget(self.show_union_boxes_checkbox)
         self.show_union_boxes_checkbox.toggled.connect(self.image_view.set_union_boxes_visible) # Connect signal
+
+        self.view_toggle_button = QPushButton()
+        self.legend_area.addWidget(self.view_toggle_button)
+        self.view_toggle_button.clicked.connect(self.toggle_view_mode)
 
         self.legend_area.addStretch()
 
@@ -551,6 +560,71 @@ class DataStitcherGUI(QMainWindow):
         self.draw_box_button.setCheckable(True)
         self.legend_area.addWidget(self.draw_box_button)
         self.draw_box_button.toggled.connect(self.image_view.set_drawing_mode)
+
+        self.load_current_view()
+        self.update_view_button_text()
+
+    def load_current_view(self):
+        if not self.view_modes:
+            self.view_label.setText("View: unavailable")
+            self.view_toggle_button.setEnabled(False)
+            self.image_view.set_pixmap(QPixmap(), {
+                'img_width': 0,
+                'img_height': 0,
+                'grid_size': 0,
+                'overlap_pixels': 0,
+                'all_box_data': [],
+                'scan_ids': [],
+                'scan_id_pairs': [],
+                'fine_path': self.fine_path,
+                'info_path': self.info_path
+            })
+            return
+
+        view_config = self.view_modes[self.current_view_index]
+        stitched_image, img_info = create_stitched_grid(
+            self.base_root,
+            self.scan_id_pairs,
+            view_config['elements'],
+            self.scan_folders_template,
+            self.info_path,
+            self.fine_path
+        )
+        pixmap = self._pil_to_pixmap(stitched_image)
+        self.image_view.set_pixmap(pixmap, img_info)
+        self.view_label.setText(f"View: {view_config['name']}")
+
+    def update_view_button_text(self):
+        if len(self.view_modes) < 2:
+            self.view_toggle_button.setText("View Locked")
+            self.view_toggle_button.setEnabled(False)
+            return
+
+        next_index = self._get_next_view_index()
+        next_label = self.view_modes[next_index]['name']
+        self.view_toggle_button.setText(f"Show {next_label}")
+        self.view_toggle_button.setEnabled(True)
+
+    def _get_next_view_index(self):
+        if not self.view_modes:
+            return 0
+        return (self.current_view_index + 1) % len(self.view_modes)
+
+    def toggle_view_mode(self):
+        if len(self.view_modes) < 2:
+            return
+        self.current_view_index = self._get_next_view_index()
+        self.load_current_view()
+        self.update_view_button_text()
+
+    @staticmethod
+    def _pil_to_pixmap(image):
+        if image is None:
+            return QPixmap()
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        q_image = QImage(image.tobytes(), image.width, image.height, image.width * 3, QImage.Format_RGB888)
+        return QPixmap.fromImage(q_image)
 
     def export_image(self):
         scene = self.image_view.scene
@@ -602,18 +676,29 @@ if __name__ == '__main__':
         (367837, 367846), (367846, 367851), (367851, 367857),
         (367885, 367890), (367890, 367897), (367897, 367899)
     ] # Placeholder IDs
-    elements = {
-        "G": "detsum_Ca_K_norm.tiff",
-        "B": "detsum_Fe_K_norm.tiff",
-        "R": "detsum_Cu_K_norm.tiff"
-    }
+    view_modes = [
+        {
+            "name": "Ca / Fe / Cu",
+            "elements": {
+                "G": "detsum_Ca_K_norm.tiff",
+                "B": "detsum_Fe_K_norm.tiff",
+                "R": "detsum_Cu_K_norm.tiff"
+            }
+        },
+        {
+            "name": "Cr / Fe / Mn",
+            "elements": {
+                "G": "detsum_Cr_K_norm.tiff",
+                "B": "detsum_Fe_K_norm.tiff",
+                "R": "detsum_Mn_K_norm.tiff"
+            }
+        }
+    ]
     scan_folders_template = "output_tiff_scan2D_{sid}"
     
     info_path = "/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/data/user_macros"
     fine_path = "/home/codingcarlos/Desktop/Data/FineImages"
-    
-    stitched_image, img_info = create_stitched_grid(base_root, scan_id_pairs, elements, scan_folders_template, info_path, fine_path)
 
-    main_win = DataStitcherGUI(stitched_image, img_info)
+    main_win = DataStitcherGUI(base_root, scan_id_pairs, view_modes, scan_folders_template, info_path, fine_path)
     main_win.show()
     sys.exit(app.exec_())
