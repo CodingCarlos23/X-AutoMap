@@ -4,6 +4,7 @@ import shutil
 import json
 import io
 import numpy as np
+import cv2
 from PIL import Image, ImageDraw, ImageFont
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSizePolicy, QPushButton, QFileDialog, QShortcut, QCheckBox
 from PyQt5.QtCore import Qt, QRect
@@ -151,6 +152,12 @@ class ScansGroupedViewer(QMainWindow):
     EXPORT_BOX_BORDER_THICKNESS = 1 # For export
     ANNOTATION_FONT_SIZE = 12
     ANNOTATION_TEXT_OFFSET_Y = 18
+    TOGETHER_PAIRWISE_THRESHOLD = 0.90
+    TOGETHER_TRIO_THRESHOLD = 0.80
+    TOGETHER_CHANNEL_COVERAGE_THRESHOLD = 0.85
+    TOGETHER_COMPONENT_DOMINANCE = 0.95
+    SEPARATE_PAIRWISE_THRESHOLD = 0.90
+    SEPARATE_THIRD_OVERLAP_THRESHOLD = 0.15
     SCAN_GROUPS_CONFIG = {
         "CuCaFe": {
             "name": "Cu, Ca, Fe Group",
@@ -257,6 +264,36 @@ class ScansGroupedViewer(QMainWindow):
         nav_layout.addStretch()
         nav_layout.addWidget(self.next_button)
 
+        stats_widget = QWidget()
+        stats_layout = QHBoxLayout(stats_widget)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        stats_layout.setSpacing(30)
+        main_layout.addWidget(stats_widget)
+        stats_layout.addStretch()
+        self.scan_overlap_labels = {}
+        for stat_name in ("Separate", "Partial", "Together"):
+            stat_container = QWidget()
+            stat_container_layout = QVBoxLayout(stat_container)
+            stat_container_layout.setContentsMargins(10, 5, 10, 5)
+            stat_container_layout.setSpacing(2)
+
+            label_widget = QLabel(stat_name)
+            label_widget.setAlignment(Qt.AlignCenter)
+            label_widget.setStyleSheet("font-size: 12px; color: #bbb;")
+
+            value_label = QLabel("0")
+            value_label.setAlignment(Qt.AlignCenter)
+            value_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+
+            stat_container_layout.addWidget(label_widget)
+            stat_container_layout.addWidget(value_label)
+            stats_layout.addWidget(stat_container)
+            self.scan_overlap_labels[stat_name] = value_label
+        stats_layout.addStretch()
+        self.overlap_counts = {key: 0 for key in self.scan_overlap_labels}
+        self.scan_overlap_results = {}
+        self.refresh_overlap_labels()
+
         content_widget = QWidget()
         content_layout = QHBoxLayout(content_widget)
         main_layout.addWidget(content_widget, 1)
@@ -266,14 +303,29 @@ class ScansGroupedViewer(QMainWindow):
         content_layout.addWidget(self.large_image_label, 1)
         right_widget = QWidget()
         right_layout = QGridLayout(right_widget)
-        self.small_image_labels = []
+        self.small_image_displays = []
         for i in range(4):
             for j in range(2):
-                label = SquareLabel(self, f"Small Image {i*2 + j + 1}")
-                label.setAlignment(Qt.AlignCenter)
-                label.setStyleSheet("background-color: #222; border: 1px solid #444;")
-                right_layout.addWidget(label, i, j)
-                self.small_image_labels.append(label)
+                cell_widget = QWidget()
+                cell_layout = QVBoxLayout(cell_widget)
+                cell_layout.setContentsMargins(0, 0, 0, 0)
+                cell_layout.setSpacing(4)
+
+                image_label = SquareLabel(self, f"Small Image {i*2 + j + 1}")
+                image_label.setAlignment(Qt.AlignCenter)
+                image_label.setStyleSheet("background-color: #222; border: 1px solid #444;")
+
+                type_label = QLabel("Type: N/A")
+                type_label.setAlignment(Qt.AlignCenter)
+                type_label.setStyleSheet("color: #ccc; font-size: 12px;")
+
+                cell_layout.addWidget(image_label)
+                cell_layout.addWidget(type_label)
+                right_layout.addWidget(cell_widget, i, j)
+                self.small_image_displays.append({
+                    "image": image_label,
+                    "type": type_label
+                })
         content_layout.addWidget(right_widget, 1)
 
         footer_widget = QWidget()
@@ -351,9 +403,11 @@ class ScansGroupedViewer(QMainWindow):
         self.merged_images = {}
         self.large_image_label.setPixmap(QPixmap())
         self.large_image_label.setText(f"Loading Scan {scan_obj.id}...")
-        for label in self.small_image_labels:
-            label.setPixmap(QPixmap())
-            label.setText("")
+        for slot in self.small_image_displays:
+            slot["image"].setPixmap(QPixmap())
+            slot["image"].setText("")
+            slot["type"].setText("Type: N/A")
+        self.reset_overlap_counts()
 
         scan_dir = self.get_processed_scan_dir(scan_obj)
         if not os.path.isdir(scan_dir):
@@ -362,8 +416,8 @@ class ScansGroupedViewer(QMainWindow):
 
         self.load_and_display_merged_image(scan_dir, scan_obj)
         for i, sec_scan_id in enumerate(scan_obj.fine_scan_ids):
-            if i < len(self.small_image_labels):
-                self.load_and_display_secondary_image(scan_dir, sec_scan_id, scan_obj.group_config, self.small_image_labels[i])
+            if i < len(self.small_image_displays):
+                self.load_and_display_secondary_image(scan_dir, sec_scan_id, scan_obj.group_config, self.small_image_displays[i])
 
     def show_previous_scan(self):
         self.current_scan_index -= 1
@@ -388,6 +442,116 @@ class ScansGroupedViewer(QMainWindow):
         if os.path.isdir(preferred_dir) or not os.path.isdir(legacy_dir):
             return preferred_dir
         return legacy_dir
+
+    def reset_overlap_counts(self):
+        for key in self.overlap_counts:
+            self.overlap_counts[key] = 0
+        self.scan_overlap_results.clear()
+        self.refresh_overlap_labels()
+
+    def refresh_overlap_labels(self):
+        for key, label in self.scan_overlap_labels.items():
+            label.setText(str(self.overlap_counts.get(key, 0)))
+
+    def record_scan_classification(self, scan_id, classification):
+        previous = self.scan_overlap_results.get(scan_id)
+        if previous == classification:
+            return
+        if previous in self.overlap_counts:
+            self.overlap_counts[previous] = max(0, self.overlap_counts[previous] - 1)
+        if classification in self.overlap_counts:
+            self.overlap_counts[classification] += 1
+            self.scan_overlap_results[scan_id] = classification
+        else:
+            self.scan_overlap_results.pop(scan_id, None)
+        self.refresh_overlap_labels()
+
+    def analyze_components(self, mask):
+        total = int(mask.sum())
+        if total == 0:
+            return {"count": 0, "largest_fraction": 0.0, "total": 0}
+        mask_uint8 = mask.astype(np.uint8)
+        num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask_uint8, connectivity=8)
+        if num_labels <= 1:
+            return {"count": 0, "largest_fraction": 0.0, "total": total}
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        largest = int(areas.max()) if areas.size else 0
+        return {
+            "count": len(areas),
+            "largest_fraction": (largest / total) if total else 0.0,
+            "total": total,
+        }
+
+    def typeDetector(self, channel_images):
+        """Classify overlap levels of the three element channels."""
+        if not channel_images or len(channel_images) < 3:
+            return None
+
+        masks = [(img > 0) for img in channel_images]
+        union_mask = np.logical_or.reduce(masks)
+        union_stats = self.analyze_components(union_mask)
+        total_pixels = union_stats["total"]
+        if total_pixels == 0:
+            return "Separate"
+
+        channel_stats = [self.analyze_components(mask) for mask in masks]
+        if any(stat["total"] == 0 for stat in channel_stats):
+            return "Separate"
+        scattered_union = (
+            union_stats["count"] > 1
+            and union_stats["largest_fraction"] < self.TOGETHER_COMPONENT_DOMINANCE
+        )
+        scattered_channels = all(
+            stat["count"] > 1 and stat["largest_fraction"] < self.TOGETHER_COMPONENT_DOMINANCE
+            for stat in channel_stats
+            if stat["total"] > 0
+        )
+        if scattered_union or scattered_channels:
+            return "Partial"
+
+        overlap_fractions = []
+        pair_overlaps = []
+        trio_mask = np.logical_and.reduce(masks)
+        trio_overlap_pixels = trio_mask.sum()
+        trio_overlap_fraction = trio_overlap_pixels / total_pixels
+        for i in range(len(masks)):
+            for j in range(i + 1, len(masks)):
+                overlap_pixels = np.logical_and(masks[i], masks[j]).sum()
+                overlap_value = overlap_pixels / total_pixels
+                overlap_fractions.append(overlap_value)
+                pair_overlaps.append((overlap_value, i, j))
+
+        if not overlap_fractions:
+            return "Separate"
+
+        channel_coverages = [
+            (trio_overlap_pixels / max(mask.sum(), 1))
+            for mask in masks
+        ]
+        if (
+            trio_overlap_fraction >= self.TOGETHER_TRIO_THRESHOLD
+            and all(frac >= self.TOGETHER_PAIRWISE_THRESHOLD for frac in overlap_fractions)
+            and min(channel_coverages) >= self.TOGETHER_CHANNEL_COVERAGE_THRESHOLD
+        ):
+            return "Together"
+
+        if pair_overlaps:
+            best_overlap, idx_a, idx_b = max(pair_overlaps, key=lambda x: x[0])
+            other_indices = [idx for idx in range(len(masks)) if idx not in (idx_a, idx_b)]
+            if (
+                best_overlap >= self.SEPARATE_PAIRWISE_THRESHOLD
+                and other_indices
+            ):
+                third_idx = other_indices[0]
+                third_mask = masks[third_idx]
+                third_total = third_mask.sum()
+                if third_total > 0:
+                    pair_union = np.logical_or(masks[idx_a], masks[idx_b])
+                    third_overlap_fraction = np.logical_and(pair_union, third_mask).sum() / third_total
+                    if third_overlap_fraction <= self.SEPARATE_THIRD_OVERLAP_THRESHOLD:
+                        return "Separate"
+
+        return "Separate"
 
     def load_and_display_merged_image(self, scan_dir, scan_obj):
         group_config = scan_obj.group_config
@@ -433,7 +597,6 @@ class ScansGroupedViewer(QMainWindow):
         if not self.current_base_image:
             return
 
-        # The base image is converted to pixmap and set
         buffer = io.BytesIO()
         self.current_base_image.save(buffer, format='PNG')
         pixmap = QPixmap()
@@ -501,10 +664,13 @@ class ScansGroupedViewer(QMainWindow):
         painter.end()
         return export_image
 
-    def load_and_display_secondary_image(self, scan_dir, scan_id, group_config, target_label):
+    def load_and_display_secondary_image(self, scan_dir, scan_id, group_config, target_slot):
         elements = group_config["elements"]
         elements_map = group_config["elements_map"]
         image_paths = {el: os.path.join(scan_dir, f"detsum_{scan_id}_{el}.tiff") for el in elements}
+        image_label = target_slot["image"]
+        type_label = target_slot["type"]
+        type_label.setText("Type: ...")
 
         try:
             r_img = np.array(Image.open(image_paths[elements_map["r"]]))
@@ -523,14 +689,23 @@ class ScansGroupedViewer(QMainWindow):
             pil_img.save(buffer, format='PNG')
             pixmap = QPixmap()
             pixmap.loadFromData(buffer.getvalue(), 'PNG')
-            target_label.setPixmap(pixmap)
+            image_label.setPixmap(pixmap)
+            classification = self.typeDetector([r_img, g_img, b_img])
+            type_label.setText(f"Type: {classification or 'Unknown'}")
+            self.record_scan_classification(scan_id, classification)
             self.merged_images[scan_id] = pil_img
         except FileNotFoundError as e:
             print(f"Error loading secondary image for scan {scan_id}: {e}")
-            target_label.setText(f"Not Found")
+            image_label.setPixmap(QPixmap())
+            image_label.setText("Not Found")
+            type_label.setText("Type: Missing")
+            self.record_scan_classification(scan_id, None)
         except Exception as e:
             print(f"An error occurred while loading secondary image {scan_id}: {e}")
-            target_label.setText("Error")
+            image_label.setPixmap(QPixmap())
+            image_label.setText("Error")
+            type_label.setText("Type: Error")
+            self.record_scan_classification(scan_id, None)
 
     def copy_scan_data(self, scan_obj):
         group_config = scan_obj.group_config
