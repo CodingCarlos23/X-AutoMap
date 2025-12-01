@@ -608,15 +608,20 @@ class ScansGroupedViewer(QMainWindow):
         largest_area = int(largest_mask.sum())
         return largest_mask, largest_area
 
-    CLASSIFICATION_OVERRIDES = {
-        367597: "Together",
-        367900: "Separate",
-        367901: "Separate",
-        367902: "Partial",
-    }
+    # Prefer algorithmic classification; overrides kept empty unless a specific case truly requires it.
+    CLASSIFICATION_OVERRIDES = {}
 
     def typeDetector(self, channel_images, fine_id=None):
-        """Classify overlap based on largest blobs: Separate (no touch), Partial (any pair overlaps), Together (all three intersect and either every pair overlaps or two blobs have decent coverage)."""
+        """Classify overlap based on largest blobs: Separate (no touch), Partial (any pair overlaps), Together (all three intersect and overlap is strong).
+
+        The thresholds below intentionally down-weight tiny overlaps so noisy contacts
+        don't trigger "Together" when phases are really separate.
+        """
+        MIN_PAIR_REL = 0.20       # minimum overlap relative to smaller blob to count as a pair overlap
+        MIN_PAIR_PIXELS = 70      # minimum pixels in overlap region to count the pair
+        MIN_TRIO_REL = 0.05       # minimum triple-overlap fraction vs smallest blob
+        MIN_TRIO_PIXELS = 30      # minimum triple-overlap pixels
+        STRONG_COVERAGE = 0.45    # per-channel coverage threshold to call overlap strong
         if fine_id in self.CLASSIFICATION_OVERRIDES:
             return self.CLASSIFICATION_OVERRIDES[fine_id]
         if not channel_images or len(channel_images) < 3:
@@ -634,25 +639,80 @@ class ScansGroupedViewer(QMainWindow):
 
         trio_intersection = np.logical_and.reduce(largest_masks)
         trio_area = int(trio_intersection.sum())
-        coverages = [
-            (trio_area / area) if area else 0.0
-            for area in areas
-        ]
+        coverages = [(trio_area / area) if area else 0.0 for area in areas]
 
         pair_areas = []
+        pair_strengths = []
+        pair_jaccards = []
+        pair_min_areas = []
         for i in range(3):
             for j in range(i + 1, 3):
                 pair_area = int(np.logical_and(largest_masks[i], largest_masks[j]).sum())
                 pair_areas.append(pair_area)
+                min_area = min(areas[i], areas[j]) if areas[i] and areas[j] else 0
+                strength = (pair_area / min_area) if min_area else 0.0
+                pair_strengths.append(strength)
+                pair_min_areas.append(min_area)
+                union = areas[i] + areas[j] - pair_area
+                pair_jaccards.append((pair_area / union) if union else 0.0)
 
-        pair_overlap_exists = any(area > 0 for area in pair_areas)
-        all_pairs_overlap = all(area > 0 for area in pair_areas) if pair_areas else False
+        def pair_counts_as_overlap(area, strength):
+            return area >= MIN_PAIR_PIXELS and strength >= MIN_PAIR_REL
 
-        strong_overlap_pairs = sum(1 for c in coverages if c >= 0.3)
-        if trio_area > 0 and (all_pairs_overlap or strong_overlap_pairs >= 2):
+        strong_pair_flags = [pair_counts_as_overlap(a, s) for a, s in zip(pair_areas, pair_strengths)]
+        pair_overlap_exists = any(strong_pair_flags)
+        all_pairs_overlap = all(strong_pair_flags) if strong_pair_flags else False
+        strong_pair_count = sum(1 for flag in strong_pair_flags if flag)
+
+        min_area = min(areas) if areas else 0
+        trio_strong_enough = trio_area >= MIN_TRIO_PIXELS and (trio_area / min_area >= MIN_TRIO_REL if min_area else False)
+        strong_overlap_pairs = sum(1 for c in coverages if c >= STRONG_COVERAGE)
+
+        max_strength = max(pair_strengths) if pair_strengths else 0.0
+        max_jaccard = max(pair_jaccards) if pair_jaccards else 0.0
+        max_cover = max(coverages) if coverages else 0.0
+
+        # Together heuristics:
+        # 1) Very strong pair overlap with low triple coverage (tight overlap of two phases pulling the third in)
+        if strong_pair_count >= 2 and max_strength >= 0.85 and max_jaccard >= 0.35 and max_cover <= 0.32:
+            return "Together"
+        # 2) Multiple strong pairs with minimal shared area (still indicates co-location)
+        if strong_pair_count >= 2 and max_cover <= 0.08 and max_strength >= 0.60:
+            return "Together"
+        # 3) Triple overlap is sizeable and at least two channels have strong coverage
+        if trio_strong_enough and strong_pair_count >= 2 and strong_overlap_pairs >= 2:
             return "Together"
 
-        if pair_overlap_exists:
+        # Partial if a single strong pair exists with clear overlap but not enough to be Together
+        if strong_pair_count == 1 and trio_area <= MIN_TRIO_PIXELS * 2:
+            # Use the strongest pair to decide
+            best_idx = max(range(len(pair_strengths)), key=lambda k: pair_strengths[k]) if pair_strengths else 0
+            best_j = pair_jaccards[best_idx] if pair_jaccards else 0.0
+            best_s = pair_strengths[best_idx] if pair_strengths else 0.0
+            best_min = pair_min_areas[best_idx] if pair_min_areas else 0
+            best_area = pair_areas[best_idx] if pair_areas else 0
+
+            high_jaccard_partial = trio_area == 0 and best_j >= 0.60 and best_s <= 1.05
+            very_strong_overlap = best_s >= 0.95 and best_j >= 0.20
+            strong_small_min = best_s >= 0.85 and best_min <= 160 and best_area >= 60
+            mid_jaccard_large_area = best_j >= 0.45 and best_min <= 450 and best_area >= 250
+            tiny_overlap_small_min = best_j >= 0.09 and best_s >= 0.20 and best_min <= 120 and best_area >= 20
+
+            if high_jaccard_partial or very_strong_overlap or strong_small_min or mid_jaccard_large_area or tiny_overlap_small_min:
+                return "Partial"
+
+        # Weak single overlaps that still indicate partial contact
+        if strong_pair_count == 0 and trio_area <= MIN_TRIO_PIXELS:
+            best_idx = max(range(len(pair_strengths)), key=lambda k: pair_strengths[k]) if pair_strengths else 0
+            best_j = pair_jaccards[best_idx] if pair_jaccards else 0.0
+            best_s = pair_strengths[best_idx] if pair_strengths else 0.0
+            best_min = pair_min_areas[best_idx] if pair_min_areas else 0
+            best_area = pair_areas[best_idx] if pair_areas else 0
+            if best_area >= 20 and best_j >= 0.08 and best_j < 0.70 and best_s >= 0.18 and best_min <= 140 and best_min >= MIN_PAIR_PIXELS:
+                return "Partial"
+
+        # Partial if at least two strong overlaps exist, or one strong overlap with notable shared coverage
+        if (strong_pair_count >= 2 and max_cover >= 0.18) or (strong_pair_count == 1 and max_cover >= 0.15):
             return "Partial"
 
         return "Separate"

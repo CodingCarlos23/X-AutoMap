@@ -1,0 +1,11 @@
+coarse:367582, fine:367585, type:Separate
+coarse:367582, fine:367588, type:Separate
+coarse:367609, fine:367613, type:Separate
+coarse:367622, fine:367625, type:Separate
+coarse:367630, fine:367633, type:Separate
+coarse:367658, fine:367662, type:Separate
+coarse:367686, fine:367687, type:Separate
+coarse:367675, fine:367678, type:Separate
+coarse:367692, fine:367697, type:Separate
+coarse:367703, fine:367707, type:Separate
+coarse:367726, fine:367730, type:Separate
