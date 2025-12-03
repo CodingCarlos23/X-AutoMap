@@ -8,8 +8,9 @@ from typing import List, Dict
 
 import numpy as np
 from PIL import Image
-from PyQt5.QtCore import Qt, QRectF, QSizeF, QPointF, QEvent, pyqtSignal
-from PyQt5.QtGui import QPixmap, QPainter, QColor, QFont
+from PyQt5.QtCore import Qt, QRectF, QSizeF, QPointF, QEvent, pyqtSignal, QSize
+from PyQt5.QtGui import QPixmap, QPainter, QColor, QFont, QImage, QPdfWriter
+from PyQt5.QtGui import QPagedPaintDevice
 from PyQt5.QtSvg import QSvgGenerator
 from PyQt5.QtWidgets import (
     QApplication,
@@ -257,11 +258,35 @@ class BarGraphWidget(QWidget):
         self.mode = mode
         self.update()
 
+    def render_to_image(self, size: QSize = QSize(2000, 1200)) -> QImage:
+        img = QImage(size, QImage.Format_ARGB32)
+        img.fill(Qt.transparent)
+        painter = QPainter(img)
+        self._draw_graph(painter, QRectF(QPointF(0, 0), QSizeF(size)))
+        painter.end()
+        return img
+
+    def export_png(self, path: str, size: QSize = QSize(2000, 1200)):
+        image = self.render_to_image(size)
+        image.save(path)
+
+    def export_pdf(self, path: str, size: QSize = QSize(2000, 1200), dpi: int = 300):
+        writer = QPdfWriter(path)
+        writer.setResolution(dpi)
+        width_mm = (size.width() / dpi) * 25.4
+        height_mm = (size.height() / dpi) * 25.4
+        writer.setPageSizeMM(QSizeF(width_mm, height_mm))
+        painter = QPainter(writer)
+        self._draw_graph(painter, QRectF(QPointF(0, 0), QSizeF(size)))
+        painter.end()
+
     def _draw_graph(self, painter: QPainter, bounds: QRectF):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(bounds, QColor("#101010"))
 
         base_font = painter.font()
+        base_font.setPointSize(16)
+        painter.setFont(base_font)
         data_empty = not self.counts if self.mode == "total" else not self.stacked_data
         if data_empty:
             painter.setPen(Qt.white)
@@ -290,8 +315,15 @@ class BarGraphWidget(QWidget):
             painter.drawText(bounds, Qt.AlignCenter, "All counts are zero")
             return
 
-        margin = 50
-        axis_rect = QRectF(bounds.left() + margin, bounds.top() + margin, bounds.width() - 2 * margin, bounds.height() - 2 * margin)
+        margin_lr = 90
+        margin_top = 80
+        margin_bottom = 110
+        axis_rect = QRectF(
+            bounds.left() + margin_lr,
+            bounds.top() + margin_top,
+            bounds.width() - 2 * margin_lr,
+            bounds.height() - (margin_top + margin_bottom),
+        )
         bar_slot = axis_rect.width() / max(len(categories), 1)
         bar_width = bar_slot * 0.6
         colors = {"Separate": QColor("#66aaff"), "Partial": QColor("#ffb347"), "Together": QColor("#6ee7b7")}
@@ -334,8 +366,9 @@ class BarGraphWidget(QWidget):
             else:
                 cat_font.setPointSize(14)
             painter.setFont(cat_font)
+            cat_label_height = margin_bottom * 0.6
             painter.drawText(
-                QRectF(bar_rect.left(), axis_rect.bottom(), bar_rect.width(), margin / 2),
+                QRectF(x_center - bar_slot / 2, axis_rect.bottom(), bar_slot, cat_label_height),
                 Qt.AlignHCenter | Qt.AlignTop,
                 cat,
             )
@@ -507,6 +540,9 @@ class TypeViewer(QMainWindow):
         self.export_svg_btn = QPushButton("Export SVG")
         self.export_svg_btn.clicked.connect(self.export_bar_graph)
         controls_row.addWidget(self.export_svg_btn)
+        self.export_all_btn = QPushButton("Export All")
+        self.export_all_btn.clicked.connect(self.export_all_assets)
+        controls_row.addWidget(self.export_all_btn)
         bar_layout.addLayout(controls_row)
         tabs.addTab(bar_tab, "Type Counts")
 
@@ -523,7 +559,15 @@ class TypeViewer(QMainWindow):
     def handle_item_click(self, item: ClassifiedFine):
         try:
             with open(self.clicked_log_path, "a", encoding="utf-8") as f:
-                f.write(f"coarse:{item.coarse_id}, fine:{item.fine_id}, type:{item.classification}\n")
+                f.write(
+                    "coarse:{coarse}, fine:{fine}, type:{cls}, elements:{elements}, group:{group}\n".format(
+                        coarse=item.coarse_id,
+                        fine=item.fine_id,
+                        cls=item.classification,
+                        elements=item.elements,
+                        group=item.group,
+                    )
+                )
         except OSError:
             pass
 
@@ -568,6 +612,21 @@ class TypeViewer(QMainWindow):
                 path += ".svg"
             self.bar_graph.export_svg(path)
 
+    def export_all_assets(self):
+        dest_dir = QFileDialog.getExistingDirectory(self, "Select Export Destination")
+        if not dest_dir:
+            return
+        dest = Path(dest_dir)
+
+        # Export bar graph as high-res PNG and PDF
+        graph_png = dest / "type_counts.png"
+        graph_pdf = dest / "type_counts.pdf"
+        self.bar_graph.export_png(str(graph_png))
+        self.bar_graph.export_pdf(str(graph_pdf))
+
+        # Export 5x5 grids per category (paged) as PNG and PDF
+        self.export_category_grids(dest)
+
     def rebuild_pixmaps(self):
         for cat, items in self.categories.items():
             for item in items:
@@ -582,6 +641,80 @@ class TypeViewer(QMainWindow):
                 item.pixmap_outlined = pil_to_qpixmap(Image.fromarray(outlined_np, "RGB"))
             if cat in self.panels:
                 self.panels[cat].update_page()
+
+    def save_pdf_from_image(self, image: QImage, path: Path, dpi: int = 300):
+        writer = QPdfWriter(str(path))
+        writer.setResolution(dpi)
+        width_mm = (image.width() / dpi) * 25.4
+        height_mm = (image.height() / dpi) * 25.4
+        writer.setPageSizeMM(QSizeF(width_mm, height_mm))
+        painter = QPainter(writer)
+        painter.drawImage(0, 0, image)
+        painter.end()
+
+    def export_category_grids(self, dest: Path):
+        cols = 5
+        rows = 5
+        cell = 300
+        margin = 40
+        spacing = 20
+        title_height = 80
+        width = margin * 2 + cols * cell + spacing * (cols - 1)
+        height = margin * 2 + title_height + rows * cell + spacing * (rows - 1)
+        size = QSize(int(width), int(height))
+        combined_pages: List[QImage] = []
+
+        def chunks(seq, n):
+            for i in range(0, len(seq), n):
+                yield seq[i : i + n]
+
+        for category, items in self.categories.items():
+            if not items:
+                continue
+            pages = list(chunks(items, cols * rows))
+            for idx, page in enumerate(pages):
+                image = QImage(size, QImage.Format_ARGB32)
+                image.fill(Qt.white)
+                painter = QPainter(image)
+                painter.fillRect(QRectF(QPointF(0, 0), QSizeF(size)), Qt.white)
+                title = f"{category} (page {idx + 1})"
+                painter.setPen(Qt.black)
+                title_font = QFont()
+                title_font.setPointSize(18)
+                title_font.setBold(True)
+                painter.setFont(title_font)
+                painter.drawText(QRectF(0, margin / 2, width, title_height), Qt.AlignCenter, title)
+
+                for pos, item in enumerate(page):
+                    row = pos // cols
+                    col = pos % cols
+                    x = margin + col * (cell + spacing)
+                    y = margin + title_height + row * (cell + spacing)
+                    pix = item.get_pixmap(self.outlines_enabled)
+                    scaled = pix.scaled(cell, cell, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    target_x = x + (cell - scaled.width()) / 2
+                    target_y = y + (cell - scaled.height()) / 2
+                    painter.drawPixmap(int(target_x), int(target_y), scaled)
+
+                painter.end()
+                base = f"{category.lower()}_{idx + 1}"
+                png_path = dest / f"{base}.png"
+                pdf_path = dest / f"{base}.pdf"
+                image.save(str(png_path))
+                self.save_pdf_from_image(image, pdf_path)
+                combined_pages.append(image)
+
+        if combined_pages:
+            combined_pdf_path = dest / "TypesImages.pdf"
+            writer = QPdfWriter(str(combined_pdf_path))
+            writer.setResolution(300)
+            writer.setPageSizeMM(QSizeF((width / 300) * 25.4, (height / 300) * 25.4))
+            painter = QPainter(writer)
+            for idx, img in enumerate(combined_pages):
+                if idx > 0:
+                    writer.newPage()
+                painter.drawImage(0, 0, img)
+            painter.end()
 
     def process_all_scans(self):
         config = ScansGroupedViewer.SCAN_GROUPS_CONFIG
@@ -601,8 +734,11 @@ class TypeViewer(QMainWindow):
                         rgb_np = load_rgb_image(scan_dir, fine_id, group_config["elements_map"])
                     except FileNotFoundError:
                         continue
+                    elements_str = "".join(group_config.get("elements", []))
                     classification = self.classifier.typeDetector(
-                        [rgb_np[:, :, 0], rgb_np[:, :, 1], rgb_np[:, :, 2]], fine_id=fine_id
+                        [rgb_np[:, :, 0], rgb_np[:, :, 1], rgb_np[:, :, 2]],
+                        fine_id=fine_id,
+                        elements=elements_str,
                     )
                     pil_img = Image.fromarray(rgb_np, "RGB")
                     outlined_np = self.classifier.outline_channel_largest_blobs(

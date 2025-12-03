@@ -611,17 +611,35 @@ class ScansGroupedViewer(QMainWindow):
     # Prefer algorithmic classification; overrides kept empty unless a specific case truly requires it.
     CLASSIFICATION_OVERRIDES = {}
 
-    def typeDetector(self, channel_images, fine_id=None):
+    def typeDetector(self, channel_images, fine_id=None, elements=None):
         """Classify overlap based on largest blobs: Separate (no touch), Partial (any pair overlaps), Together (all three intersect and overlap is strong).
 
         The thresholds below intentionally down-weight tiny overlaps so noisy contacts
         don't trigger "Together" when phases are really separate.
         """
+        elements_str = "".join(elements) if isinstance(elements, (list, tuple)) else (elements or "")
+
+        # Baseline thresholds; relaxed for element sets with weaker signals (e.g. Cr/Fe/Mn)
         MIN_PAIR_REL = 0.20       # minimum overlap relative to smaller blob to count as a pair overlap
         MIN_PAIR_PIXELS = 70      # minimum pixels in overlap region to count the pair
         MIN_TRIO_REL = 0.05       # minimum triple-overlap fraction vs smallest blob
         MIN_TRIO_PIXELS = 30      # minimum triple-overlap pixels
         STRONG_COVERAGE = 0.45    # per-channel coverage threshold to call overlap strong
+
+        if "CrFeMn" in elements_str:
+            # Cr/Fe/Mn scans tend to be dimmer and fragmented; lower the bar for overlaps
+            MIN_PAIR_REL = 0.12
+            MIN_PAIR_PIXELS = 40
+            MIN_TRIO_REL = 0.03
+            MIN_TRIO_PIXELS = 15
+            STRONG_COVERAGE = 0.32
+        elif "FeCaSi" in elements_str:
+            # Fe/Ca/Si often has weaker overlaps than Cu/Ca/Fe
+            MIN_PAIR_REL = 0.15
+            MIN_PAIR_PIXELS = 50
+            MIN_TRIO_REL = 0.04
+            MIN_TRIO_PIXELS = 20
+            STRONG_COVERAGE = 0.38
         if fine_id in self.CLASSIFICATION_OVERRIDES:
             return self.CLASSIFICATION_OVERRIDES[fine_id]
         if not channel_images or len(channel_images) < 3:
@@ -682,6 +700,10 @@ class ScansGroupedViewer(QMainWindow):
         # 3) Triple overlap is sizeable and at least two channels have strong coverage
         if trio_strong_enough and strong_pair_count >= 2 and strong_overlap_pairs >= 2:
             return "Together"
+        # 4) Element-set specific relaxation (e.g. CrFeMn): if two overlaps exist and overall signals are modest, still treat as Together
+        if "CrFeMn" in elements_str and strong_pair_count >= 2:
+            if (max_strength >= 0.35 and max_jaccard >= 0.08) or trio_area >= MIN_TRIO_PIXELS:
+                return "Together"
 
         # Partial if a single strong pair exists with clear overlap but not enough to be Together
         if strong_pair_count == 1 and trio_area <= MIN_TRIO_PIXELS * 2:
@@ -714,6 +736,16 @@ class ScansGroupedViewer(QMainWindow):
         # Partial if at least two strong overlaps exist, or one strong overlap with notable shared coverage
         if (strong_pair_count >= 2 and max_cover >= 0.18) or (strong_pair_count == 1 and max_cover >= 0.15):
             return "Partial"
+
+        # CrFeMn fallback: if any measurable trio overlap exists with modest pair strength, lean Together
+        if "CrFeMn" in elements_str and trio_area > 0 and max_strength >= 0.18:
+            return "Together"
+
+        # Element-set fallbacks for weak signals: classify as Partial on modest overlaps
+        if "CrFeMn" in elements_str or "FeCaSi" in elements_str:
+            low_overlap_pair = any(area >= 15 and strength >= 0.06 for area, strength in zip(pair_areas, pair_strengths))
+            if low_overlap_pair or (trio_area > 0 and max_strength >= 0.08):
+                return "Partial"
 
         return "Separate"
 
@@ -912,7 +944,8 @@ class ScansGroupedViewer(QMainWindow):
 
             active_image = pil_outlined if self.outlines_enabled else pil_plain
             self.set_label_pixmap(image_label, active_image)
-            classification = self.typeDetector([r_img, g_img, b_img], fine_id=scan_id)
+            elements_str = "".join(elements)
+            classification = self.typeDetector([r_img, g_img, b_img], fine_id=scan_id, elements=elements_str)
             type_label.setText(f"Type: {classification or 'Unknown'}")
             self.record_scan_classification(scan_id, classification)
             # Keep merged_images aligned with what is shown for export compatibility
