@@ -23,10 +23,12 @@ from PyQt5.QtWidgets import (
     QShortcut,
     QPushButton,
     QVBoxLayout,
+    QComboBox,
     QWidget,
     QSizePolicy,
     QGroupBox,
     QTabWidget,
+    QComboBox,
 )
 from PyQt5.QtWidgets import QToolTip
 
@@ -36,6 +38,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from viewers.DetailBeta import ScansGroupedViewer, PROCESSED_SCANS_DIR
+from utils import compute_px_per_um
 
 
 def normalize_channel(arr: np.ndarray) -> np.ndarray:
@@ -94,10 +97,22 @@ class ClassifiedFine:
     pixmap_plain: QPixmap
     pixmap_outlined: QPixmap
     elements: str
+    channel_map: Dict[str, str]
     group: str
+    width_px: int
+    height_px: int
+    px_per_um: float
+    real_size_um: tuple
 
     def get_pixmap(self, outlines_enabled: bool) -> QPixmap:
         return self.pixmap_outlined if outlines_enabled else self.pixmap_plain
+
+    def channel_label(self) -> str:
+        return "R: {r}  G: {g}  B: {b}".format(
+            r=self.channel_map.get("r", "?"),
+            g=self.channel_map.get("g", "?"),
+            b=self.channel_map.get("b", "?"),
+        )
 
 
 class ClickableLabel(QLabel):
@@ -178,8 +193,11 @@ class CategoryPanel(QWidget):
         subset = self.items[start : start + self.per_page]
         for lbl, item in zip(self.slots, subset):
             lbl.setPixmap(item.get_pixmap(self.outlines_enabled))
+            size_text = f"Size: {item.width_px}x{item.height_px} px"
+            if item.real_size_um and any(v > 0 for v in item.real_size_um):
+                size_text += " | {:.2f}x{:.2f} um".format(item.real_size_um[0], item.real_size_um[1])
             lbl.setToolTip(
-                f"Coarse {item.coarse_id} | Fine {item.fine_id}\nType: {item.classification}\nElements: {item.elements}"
+                f"Coarse {item.coarse_id} | Fine {item.fine_id}\nType: {item.classification}\nElements: {item.elements}\nChannels: {item.channel_label()}\n{size_text}"
             )
             lbl.setText("")
             lbl.set_item(item)
@@ -271,13 +289,14 @@ class BarGraphWidget(QWidget):
         image.save(path)
 
     def export_pdf(self, path: str, size: QSize = QSize(2000, 1200), dpi: int = 300):
+        image = self.render_to_image(size)
         writer = QPdfWriter(path)
         writer.setResolution(dpi)
-        width_mm = (size.width() / dpi) * 25.4
-        height_mm = (size.height() / dpi) * 25.4
+        width_mm = (image.width() / dpi) * 25.4
+        height_mm = (image.height() / dpi) * 25.4
         writer.setPageSizeMM(QSizeF(width_mm, height_mm))
         painter = QPainter(writer)
-        self._draw_graph(painter, QRectF(QPointF(0, 0), QSizeF(size)))
+        painter.drawImage(0, 0, image)
         painter.end()
 
     def _draw_graph(self, painter: QPainter, bounds: QRectF):
@@ -292,6 +311,17 @@ class BarGraphWidget(QWidget):
             painter.setPen(Qt.white)
             painter.drawText(bounds, Qt.AlignCenter, "No data to display")
             return
+
+        # Title
+        painter.setPen(Qt.white)
+        title_font = QFont(base_font)
+        title_font.setPointSize(max(title_font.pointSize() + 4, 18))
+        painter.setFont(title_font)
+        title_text = "Type Counts - Total" if self.mode != "stacked" else "Type Counts - Stacked by Group"
+        if hasattr(self, "_title_suffix") and self._title_suffix:
+            title_text = f"{title_text} ({self._title_suffix})"
+        painter.drawText(QRectF(bounds.left(), bounds.top() + 8, bounds.width(), 32), Qt.AlignHCenter | Qt.AlignTop, title_text)
+        painter.setFont(base_font)
 
         def ordered_categories(available: List[str]) -> List[str]:
             if self.category_order:
@@ -449,6 +479,12 @@ class TypeViewer(QMainWindow):
         self.last_active_panel = None
         self.clicked_log_path = Path(__file__).with_name("clicked.txt")
         self.group_order = ["CuCaFe", "FeCaSi", "CrFeMn"]
+        self.group_configs = ScansGroupedViewer.SCAN_GROUPS_CONFIG
+        self.px_per_um_cache: Dict[str, float] = {}
+        self.box_cache: Dict[str, List[dict]] = {}
+        self.size_bins: List[str] = []
+        self.size_overall_counts: Dict[str, int] = {}
+        self.size_category_counts: Dict[str, Dict[str, int]] = {}
         self.group_colors = {
             "CuCaFe": QColor("#8ecae6"),
             "FeCaSi": QColor("#ff9f1c"),
@@ -503,6 +539,7 @@ class TypeViewer(QMainWindow):
 
         self.panels = {}
         self.categories = {"Separate": [], "Partial": [], "Together": []}
+        self.category_order = ["Separate", "Partial", "Together"]
 
         self.process_all_scans()
         for cat_name in ["Separate", "Partial", "Together"]:
@@ -523,7 +560,6 @@ class TypeViewer(QMainWindow):
 
         bar_tab = QWidget()
         bar_layout = QVBoxLayout(bar_tab)
-        self.category_order = ["Separate", "Partial", "Together"]
         self.bar_graph = BarGraphWidget(
             self.type_counts(),
             self.stacked_counts,
@@ -540,11 +576,68 @@ class TypeViewer(QMainWindow):
         self.export_svg_btn = QPushButton("Export SVG")
         self.export_svg_btn.clicked.connect(self.export_bar_graph)
         controls_row.addWidget(self.export_svg_btn)
-        self.export_all_btn = QPushButton("Export All")
-        self.export_all_btn.clicked.connect(self.export_all_assets)
-        controls_row.addWidget(self.export_all_btn)
         bar_layout.addLayout(controls_row)
         tabs.addTab(bar_tab, "Type Counts")
+
+        group_tab = QWidget()
+        group_layout = QVBoxLayout(group_tab)
+        selector_row = QHBoxLayout()
+        selector_label = QLabel("Elemental group:")
+        self.group_selector = QComboBox()
+        for group_key in self.group_order:
+            label = self.group_configs.get(group_key, {}).get("name", group_key)
+            self.group_selector.addItem(label, group_key)
+        self.group_selector.currentIndexChanged.connect(self.update_group_graph)
+        selector_row.addWidget(selector_label)
+        selector_row.addWidget(self.group_selector, 1)
+        selector_row.addStretch()
+        group_layout.addLayout(selector_row)
+        self.group_graph = BarGraphWidget(
+            self.group_type_counts(self.group_order[0]),
+            {},
+            category_order=self.category_order,
+        )
+        self.group_graph.setMinimumHeight(320)
+        group_layout.addWidget(self.group_graph, 1)
+        tabs.addTab(group_tab, "Group Counts")
+
+        size_tab = QWidget()
+        size_layout = QVBoxLayout(size_tab)
+        controls_size = QHBoxLayout()
+        controls_size.addWidget(QLabel("Category:"))
+        self.size_category_selector = QComboBox()
+        self.size_category_selector.addItem("Total (all types)", "total")
+        for cat in self.category_order:
+            self.size_category_selector.addItem(cat, cat)
+        controls_size.addSpacing(12)
+        controls_size.addWidget(QLabel("Group:"))
+        self.size_group_selector = QComboBox()
+        self.size_group_selector.addItem("All groups", "all")
+        for g in self.group_order:
+            self.size_group_selector.addItem(g, g)
+        self.size_category_selector.currentIndexChanged.connect(self.update_size_graph)
+        self.size_group_selector.currentIndexChanged.connect(self.update_size_graph)
+        controls_size.addWidget(self.size_category_selector)
+        controls_size.addWidget(self.size_group_selector)
+        controls_size.addStretch()
+        size_layout.addLayout(controls_size)
+        self.size_overall_graph = BarGraphWidget({})
+        self.size_overall_graph.setMinimumHeight(360)
+        size_layout.addWidget(self.size_overall_graph)
+        tabs.addTab(size_tab, "Size Distribution")
+
+        export_tab = QWidget()
+        export_layout = QVBoxLayout(export_tab)
+        export_layout.addStretch()
+        self.export_all_btn = QPushButton("Export All Assets")
+        self.export_all_btn.setMinimumHeight(40)
+        self.export_all_btn.clicked.connect(self.export_all_assets)
+        export_layout.addWidget(self.export_all_btn)
+        export_layout.addStretch()
+        tabs.addTab(export_tab, "Export")
+
+        # Now that graphs exist, populate them with computed distributions
+        self.compute_size_distributions()
 
     def toggle_outlines(self, checked: bool):
         self.outlines_enabled = checked
@@ -601,6 +694,215 @@ class TypeViewer(QMainWindow):
     def type_counts(self) -> Dict[str, int]:
         return {cat: len(items) for cat, items in self.categories.items()}
 
+    def group_type_counts(self, group: str) -> Dict[str, int]:
+        counts = {"Separate": 0, "Partial": 0, "Together": 0}
+        counts.update(self.stacked_counts.get(group, {}))
+        return counts
+
+    def update_group_graph(self):
+        group_key = self.group_selector.currentData()
+        if not group_key:
+            return
+        self.group_graph.set_counts(self.group_type_counts(group_key))
+
+    def extract_px_per_um_from_box(self, box: Dict) -> float:
+        if not isinstance(box, dict):
+            return None
+        if "px_per_um" in box and box["px_per_um"]:
+            try:
+                return float(box["px_per_um"])
+            except (TypeError, ValueError):
+                return None
+        return compute_px_per_um(box)
+
+    def load_boxes_for_scan(self, scan_dir: str, group_config: Dict) -> List[dict]:
+        json_name = group_config.get("json_name")
+        if not json_name:
+            return []
+        cache_key = os.path.join(scan_dir, json_name)
+        if cache_key in self.box_cache:
+            return self.box_cache[cache_key]
+        json_path = os.path.join(scan_dir, json_name)
+        if not os.path.exists(json_path):
+            self.box_cache[cache_key] = []
+            return []
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            self.box_cache[cache_key] = []
+            return []
+
+        boxes: List[dict] = []
+        if isinstance(data, list):
+            boxes = [b for b in data if isinstance(b, dict)]
+        elif isinstance(data, dict):
+            # Sort dict keys numerically if possible to preserve box order
+            try:
+                def key_num(k):
+                    import re
+                    m = re.search(r"(\\d+)", k)
+                    return int(m.group(1)) if m else 0
+                for k in sorted(data.keys(), key=key_num):
+                    if isinstance(data[k], dict):
+                        boxes.append(data[k])
+            except Exception:
+                boxes = [v for v in data.values() if isinstance(v, dict)]
+        # Sort by real_center_um to align with fine-scan ordering on disk
+        def center_key(box):
+            if isinstance(box, dict) and "real_center_um" in box and isinstance(box["real_center_um"], (list, tuple)):
+                cx, cy = box["real_center_um"][0], box["real_center_um"][1] if len(box["real_center_um"]) > 1 else 0
+                return (cx, cy)
+            return (0, 0)
+        boxes = sorted(boxes, key=center_key)
+        self.box_cache[cache_key] = boxes
+        return boxes
+
+    def px_per_um_for_scan(self, scan_dir: str, group_config: Dict) -> float:
+        cache_key = os.path.join(scan_dir, group_config.get("json_name", ""))
+        if cache_key in self.px_per_um_cache:
+            return self.px_per_um_cache[cache_key]
+        boxes = self.load_boxes_for_scan(scan_dir, group_config)
+        px_per_um = None
+        for box in boxes:
+            px_per_um = self.extract_px_per_um_from_box(box)
+            if px_per_um:
+                break
+
+        self.px_per_um_cache[cache_key] = px_per_um
+        return px_per_um
+
+    def size_value_um(self, item: ClassifiedFine) -> float:
+        if item.real_size_um and any(v > 0 for v in item.real_size_um):
+            return max(item.real_size_um)
+        if item.px_per_um > 0:
+            return max(item.width_px, item.height_px) / item.px_per_um
+        return None
+
+    def build_size_bins(self) -> List[str]:
+        # Fixed bins from 0–10 microns, plus an "Extreme" bin for >10
+        step = 1.0
+        labels = []
+        start = 0.0
+        end = 10.0
+        cur = start
+        while cur < end:
+            nxt = cur + step
+            labels.append(f"{int(cur)}-{int(nxt)}")
+            cur = nxt
+        labels.append("Extreme")  # >10
+        return labels
+
+    def histogram_counts(self, values: List[float], labels: List[str]) -> Dict[str, int]:
+        counts = {label: 0 for label in labels}
+        if not labels:
+            return counts
+        step = 1.0
+        for v in values:
+            if v is None:
+                continue
+            if v > 10.0:
+                counts["Extreme"] += 1
+                continue
+            if v < 0:
+                v = 0
+            idx = int(v // step)
+            idx = min(idx, 9)  # 0-9 cover 0-10
+            counts[labels[idx]] += 1
+        return counts
+
+    def compute_size_distributions(self):
+        values = []
+        by_cat = {cat: [] for cat in self.category_order}
+        by_group_cat = {grp: {cat: [] for cat in self.category_order} for grp in self.group_order}
+        by_group_total = {grp: [] for grp in self.group_order}
+        for cat, items in self.categories.items():
+            for item in items:
+                v = self.size_value_um(item)
+                if v:
+                    values.append(v)
+                    by_cat[cat].append(v)
+                    if item.group in by_group_cat:
+                        by_group_cat[item.group][cat].append(v)
+                        by_group_total[item.group].append(v)
+
+        labels = self.build_size_bins()
+        self.size_bins = labels
+        self.size_overall_counts = self.histogram_counts(values, labels)
+        self.size_category_counts = {}
+        for cat in self.category_order:
+            self.size_category_counts[cat] = self.histogram_counts(by_cat.get(cat, []), labels)
+        self.size_group_total_counts = {}
+        self.size_group_category_counts = {}
+        for grp in self.group_order:
+            self.size_group_total_counts[grp] = self.histogram_counts(by_group_total.get(grp, []), labels)
+            self.size_group_category_counts[grp] = {}
+            for cat in self.category_order:
+                self.size_group_category_counts[grp][cat] = self.histogram_counts(by_group_cat.get(grp, {}).get(cat, []), labels)
+
+        # Update graphs if initialized
+        if hasattr(self, "size_overall_graph") and self.size_overall_graph:
+            self.update_size_graph()
+
+    def update_size_graph(self):
+        cat_key = self.size_category_selector.currentData() if hasattr(self, "size_category_selector") else "total"
+        group_key = self.size_group_selector.currentData() if hasattr(self, "size_group_selector") else "all"
+        labels = self.size_bins or self.build_size_bins()
+        counts = {}
+        if group_key == "all":
+            if cat_key == "total":
+                counts = self.size_overall_counts
+            else:
+                counts = self.size_category_counts.get(cat_key, {})
+        else:
+            if cat_key == "total":
+                counts = self.size_group_total_counts.get(group_key, {})
+            else:
+                counts = self.size_group_category_counts.get(group_key, {}).get(cat_key, {})
+        # Ensure we always have counts for all labels
+        counts = {label: counts.get(label, 0) for label in labels}
+        self.size_overall_graph.set_counts(counts)
+        self.size_overall_graph.category_order = labels
+        self.size_overall_graph.update()
+
+    def export_scan_stats(self, dest: Path):
+        stats_path = dest / "CourseFineScanStats.csv"
+        header = [
+            "coarse_id",
+            "fine_id",
+            "group",
+            "classification",
+            "width_px",
+            "height_px",
+            "px_per_um",
+            "size_um_x",
+            "size_um_y",
+        ]
+        rows = []
+        for cat, items in self.categories.items():
+            for item in items:
+                sx, sy = (item.real_size_um if item.real_size_um else (0.0, 0.0))
+                rows.append(
+                    [
+                        item.coarse_id,
+                        item.fine_id,
+                        item.group,
+                        item.classification,
+                        item.width_px,
+                        item.height_px,
+                        round(item.px_per_um, 4),
+                        round(sx, 4),
+                        round(sy, 4),
+                    ]
+                )
+        try:
+            with open(stats_path, "w", encoding="utf-8") as f:
+                f.write(",".join(header) + "\n")
+                for row in rows:
+                    f.write(",".join(str(v) for v in row) + "\n")
+        except OSError:
+            pass
+
     def toggle_stacked_mode(self, state: int):
         mode = "stacked" if state == Qt.Checked else "total"
         self.bar_graph.set_mode(mode)
@@ -612,20 +914,60 @@ class TypeViewer(QMainWindow):
                 path += ".svg"
             self.bar_graph.export_svg(path)
 
+    def export_bar_graph_variants(self, dest: Path):
+        original_mode = self.bar_graph.mode
+        original_checked = self.stacked_toggle.isChecked()
+        prev_block = self.stacked_toggle.blockSignals(True)
+        try:
+            self.bar_graph._title_suffix = "All Groups"
+            self.bar_graph.set_mode("total")
+            self.stacked_toggle.setChecked(False)
+            self.bar_graph.export_png(str(dest / "type_counts_total.png"))
+
+            self.bar_graph.set_mode("stacked")
+            self.stacked_toggle.setChecked(True)
+            self.bar_graph.export_png(str(dest / "type_counts_stacked.png"))
+        finally:
+            self.bar_graph._title_suffix = ""
+            self.bar_graph.set_mode(original_mode)
+            self.stacked_toggle.setChecked(original_checked)
+            self.stacked_toggle.blockSignals(prev_block)
+
+    def export_group_bar_graphs(self, dest: Path):
+        original_group = self.group_selector.currentData()
+        for group_key in self.group_order:
+            self.group_graph.set_counts(self.group_type_counts(group_key))
+            self.group_graph._title_suffix = group_key
+            safe_name = group_key.lower()
+            self.group_graph.export_png(str(dest / f"type_counts_{safe_name}.png"))
+        if original_group is not None:
+            self.group_graph.set_counts(self.group_type_counts(original_group))
+        self.group_graph._title_suffix = ""
+
+    def export_size_graphs(self, dest: Path):
+        if not self.size_bins:
+            return
+        overall_path_png = dest / "size_distribution_overall.png"
+        self.size_overall_graph.export_png(str(overall_path_png))
+
     def export_all_assets(self):
         dest_dir = QFileDialog.getExistingDirectory(self, "Select Export Destination")
         if not dest_dir:
             return
         dest = Path(dest_dir)
 
-        # Export bar graph as high-res PNG and PDF
-        graph_png = dest / "type_counts.png"
-        graph_pdf = dest / "type_counts.pdf"
-        self.bar_graph.export_png(str(graph_png))
-        self.bar_graph.export_pdf(str(graph_pdf))
+        # Export bar graph variants (total and separated) as high-res PNG
+        self.export_bar_graph_variants(dest)
 
-        # Export 5x5 grids per category (paged) as PNG and PDF
+        # Export per-group bar graphs as PNG
+        self.export_group_bar_graphs(dest)
+
+        # Export size distribution graphs as PNG
+        self.export_size_graphs(dest)
+
+        # Export 5x5 grids per category (paged) as PNG and PDF with channel labels
         self.export_category_grids(dest)
+        self.export_scan_stats(dest)
 
     def rebuild_pixmaps(self):
         for cat, items in self.categories.items():
@@ -656,6 +998,7 @@ class TypeViewer(QMainWindow):
         cols = 5
         rows = 5
         cell = 300
+        label_height = 44
         margin = 40
         spacing = 20
         title_height = 80
@@ -663,6 +1006,8 @@ class TypeViewer(QMainWindow):
         height = margin * 2 + title_height + rows * cell + spacing * (rows - 1)
         size = QSize(int(width), int(height))
         combined_pages: List[QImage] = []
+        label_font = QFont()
+        label_font.setPointSize(10)
 
         def chunks(seq, n):
             for i in range(0, len(seq), n):
@@ -691,17 +1036,39 @@ class TypeViewer(QMainWindow):
                     x = margin + col * (cell + spacing)
                     y = margin + title_height + row * (cell + spacing)
                     pix = item.get_pixmap(self.outlines_enabled)
-                    scaled = pix.scaled(cell, cell, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    image_area_height = cell - label_height
+                    scaled = pix.scaled(cell, image_area_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     target_x = x + (cell - scaled.width()) / 2
-                    target_y = y + (cell - scaled.height()) / 2
+                    target_y = y + (image_area_height - scaled.height()) / 2
                     painter.drawPixmap(int(target_x), int(target_y), scaled)
+                    painter.setFont(label_font)
+                    painter.setPen(Qt.black)
+                    channel_rect = QRectF(x, y + image_area_height, cell, label_height / 3)
+                    size_rect = QRectF(x, y + image_area_height + label_height / 3, cell, label_height / 3)
+                    id_rect = QRectF(x, y + image_area_height + 2 * label_height / 3, cell, label_height / 3)
+                    painter.drawText(
+                        channel_rect,
+                        Qt.AlignCenter | Qt.AlignVCenter,
+                        item.channel_label(),
+                    )
+                    size_text = "Size: {:.2f}x{:.2f} um".format(
+                        item.real_size_um[0], item.real_size_um[1]
+                    ) if item.real_size_um and any(v > 0 for v in item.real_size_um) else ""
+                    painter.drawText(
+                        size_rect,
+                        Qt.AlignCenter | Qt.AlignVCenter,
+                        size_text,
+                    )
+                    painter.drawText(
+                        id_rect,
+                        Qt.AlignCenter | Qt.AlignVCenter,
+                        f"C:{item.coarse_id}  F:{item.fine_id}",
+                    )
 
                 painter.end()
                 base = f"{category.lower()}_{idx + 1}"
                 png_path = dest / f"{base}.png"
-                pdf_path = dest / f"{base}.pdf"
                 image.save(str(png_path))
-                self.save_pdf_from_image(image, pdf_path)
                 combined_pages.append(image)
 
         if combined_pages:
@@ -729,12 +1096,30 @@ class TypeViewer(QMainWindow):
                 scan_dir = processed_scan_dir(coarse_id, group_config)
                 if not os.path.isdir(scan_dir):
                     continue
+                boxes = self.load_boxes_for_scan(scan_dir, group_config)
+                px_per_um_scan = self.px_per_um_for_scan(scan_dir, group_config)
                 for fine_id in fine_ids:
+                    box_for_fine = None
+                    # Map fine_id to box index for json_boxes logic: fine_id = coarse_id + idx + 1
+                    if boxes:
+                        idx = fine_id - coarse_id - 1
+                        if 0 <= idx < len(boxes):
+                            box_for_fine = boxes[idx]
+                    px_per_um = self.extract_px_per_um_from_box(box_for_fine) if box_for_fine else None
+                    if not px_per_um:
+                        px_per_um = px_per_um_scan
                     try:
                         rgb_np = load_rgb_image(scan_dir, fine_id, group_config["elements_map"])
                     except FileNotFoundError:
                         continue
+                    h, w, _ = rgb_np.shape
                     elements_str = "".join(group_config.get("elements", []))
+                    channel_map = dict(group_config.get("elements_map", {}))
+                    real_size_um = None
+                    if box_for_fine and "real_size_um" in box_for_fine:
+                        real_size_um = tuple(box_for_fine["real_size_um"])
+                    elif px_per_um:
+                        real_size_um = (w / px_per_um, h / px_per_um)
                     classification = self.classifier.typeDetector(
                         [rgb_np[:, :, 0], rgb_np[:, :, 1], rgb_np[:, :, 2]],
                         fine_id=fine_id,
@@ -755,7 +1140,12 @@ class TypeViewer(QMainWindow):
                             pixmap_plain=pixmap_plain,
                             pixmap_outlined=pixmap_outlined,
                             elements=elements_str,
+                            channel_map=channel_map,
                             group=group_key,
+                            width_px=w,
+                            height_px=h,
+                            px_per_um=px_per_um or 0.0,
+                            real_size_um=real_size_um or (0.0, 0.0),
                         )
                     )
                     safe_cat = classification or "Separate"
@@ -764,6 +1154,8 @@ class TypeViewer(QMainWindow):
                     if safe_cat not in self.stacked_counts[group_key]:
                         self.stacked_counts[group_key][safe_cat] = 0
                     self.stacked_counts[group_key][safe_cat] += 1
+
+        self.compute_size_distributions()
 
 
 if __name__ == "__main__":

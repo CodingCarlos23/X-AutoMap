@@ -4,3 +4,4 @@ coarse:367857, fine:367859, type:Separate, elements:Cr, Fe, Mn, group:CrFeMn
 coarse:367816, fine:367817, type:Separate, elements:Cr, Fe, Mn, group:CrFeMn
 coarse:367786, fine:367787, type:Separate, elements:Cr, Fe, Mn, group:CrFeMn
 coarse:369155, fine:369157, type:Separate, elements:Ca, Fe, Si, group:FeCaSi
+coarse:367653, fine:367655, type:Together, elements:Cu, Ca, Fe, group:CuCaFe
