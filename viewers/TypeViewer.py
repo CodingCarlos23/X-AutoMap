@@ -320,7 +320,7 @@ class BarGraphWidget(QWidget):
         title_text = "Type Counts - Total" if self.mode != "stacked" else "Type Counts - Stacked by Group"
         if hasattr(self, "_title_suffix") and self._title_suffix:
             title_text = f"{title_text} ({self._title_suffix})"
-        painter.drawText(QRectF(bounds.left(), bounds.top() + 8, bounds.width(), 32), Qt.AlignHCenter | Qt.AlignTop, title_text)
+        painter.drawText(QRectF(bounds.left(), bounds.top() + 8, bounds.width(), 40), Qt.AlignHCenter | Qt.AlignTop, title_text)
         painter.setFont(base_font)
 
         def ordered_categories(available: List[str]) -> List[str]:
@@ -346,8 +346,8 @@ class BarGraphWidget(QWidget):
             return
 
         margin_lr = 90
-        margin_top = 80
-        margin_bottom = 110
+        margin_top = 100
+        margin_bottom = 140
         axis_rect = QRectF(
             bounds.left() + margin_lr,
             bounds.top() + margin_top,
@@ -397,10 +397,15 @@ class BarGraphWidget(QWidget):
                 cat_font.setPointSize(14)
             painter.setFont(cat_font)
             cat_label_height = margin_bottom * 0.6
+            display_cat = cat
+            try:
+                display_cat = str(int(round(float(cat))))
+            except (ValueError, TypeError):
+                display_cat = cat
             painter.drawText(
                 QRectF(x_center - bar_slot / 2, axis_rect.bottom(), bar_slot, cat_label_height),
                 Qt.AlignHCenter | Qt.AlignTop,
-                cat,
+                display_cat,
             )
 
             # Value label above the bar, with a larger font for readability
@@ -779,36 +784,24 @@ class TypeViewer(QMainWindow):
             return max(item.width_px, item.height_px) / item.px_per_um
         return None
 
-    def build_size_bins(self) -> List[str]:
-        # Fixed bins from 0–10 microns, plus an "Extreme" bin for >10
-        step = 1.0
-        labels = []
-        start = 0.0
-        end = 10.0
-        cur = start
-        while cur < end:
-            nxt = cur + step
-            labels.append(f"{int(cur)}-{int(nxt)}")
-            cur = nxt
-        labels.append("Extreme")  # >10
-        return labels
+    def build_size_bins(self, values: List[float], bin_count: int = 30):
+        # Integer bins 1-10, plus Extreme (>10)
+        import numpy as np
+        edges = np.concatenate([np.arange(1, 12, dtype=float), [np.inf]])
+        labels = [str(i) for i in range(1, 11)]
+        labels.append("Extreme")
+        return edges, labels
 
-    def histogram_counts(self, values: List[float], labels: List[str]) -> Dict[str, int]:
+    def histogram_counts(self, values: List[float], edges: List[float], labels: List[str]) -> Dict[str, int]:
         counts = {label: 0 for label in labels}
-        if not labels:
+        if values is None or labels is None or edges is None:
             return counts
-        step = 1.0
-        for v in values:
-            if v is None:
-                continue
-            if v > 10.0:
-                counts["Extreme"] += 1
-                continue
-            if v < 0:
-                v = 0
-            idx = int(v // step)
-            idx = min(idx, 9)  # 0-9 cover 0-10
-            counts[labels[idx]] += 1
+        if len(values) == 0 or len(labels) == 0 or len(edges) == 0:
+            return counts
+        import numpy as np
+        hist, _ = np.histogram(values, bins=edges)
+        for label, cnt in zip(labels, hist):
+            counts[label] = int(cnt)
         return counts
 
     def compute_size_distributions(self):
@@ -826,19 +819,20 @@ class TypeViewer(QMainWindow):
                         by_group_cat[item.group][cat].append(v)
                         by_group_total[item.group].append(v)
 
-        labels = self.build_size_bins()
+        edges, labels = self.build_size_bins(values)
         self.size_bins = labels
-        self.size_overall_counts = self.histogram_counts(values, labels)
+        self.size_edges = edges
+        self.size_overall_counts = self.histogram_counts(values, edges, labels)
         self.size_category_counts = {}
         for cat in self.category_order:
-            self.size_category_counts[cat] = self.histogram_counts(by_cat.get(cat, []), labels)
+            self.size_category_counts[cat] = self.histogram_counts(by_cat.get(cat, []), edges, labels)
         self.size_group_total_counts = {}
         self.size_group_category_counts = {}
         for grp in self.group_order:
-            self.size_group_total_counts[grp] = self.histogram_counts(by_group_total.get(grp, []), labels)
+            self.size_group_total_counts[grp] = self.histogram_counts(by_group_total.get(grp, []), edges, labels)
             self.size_group_category_counts[grp] = {}
             for cat in self.category_order:
-                self.size_group_category_counts[grp][cat] = self.histogram_counts(by_group_cat.get(grp, {}).get(cat, []), labels)
+                self.size_group_category_counts[grp][cat] = self.histogram_counts(by_group_cat.get(grp, {}).get(cat, []), edges, labels)
 
         # Update graphs if initialized
         if hasattr(self, "size_overall_graph") and self.size_overall_graph:
@@ -847,7 +841,7 @@ class TypeViewer(QMainWindow):
     def update_size_graph(self):
         cat_key = self.size_category_selector.currentData() if hasattr(self, "size_category_selector") else "total"
         group_key = self.size_group_selector.currentData() if hasattr(self, "size_group_selector") else "all"
-        labels = self.size_bins or self.build_size_bins()
+        labels = self.size_bins or []
         counts = {}
         if group_key == "all":
             if cat_key == "total":
@@ -967,16 +961,19 @@ class TypeViewer(QMainWindow):
 
         # Export 5x5 grids per category (paged) as PNG and PDF with channel labels
         self.export_category_grids(dest)
+        # Export outlined PDF variant only
+        self.export_category_grids(dest, outlines=True)
         self.export_scan_stats(dest)
 
     def rebuild_pixmaps(self):
         for cat, items in self.categories.items():
             for item in items:
-                qimg = item.pixmap_plain.toImage()
+                qimg = item.pixmap_plain.toImage().convertToFormat(QImage.Format_RGBA8888)
                 ptr = qimg.bits()
                 ptr.setsize(qimg.byteCount())
                 arr = np.frombuffer(ptr, np.uint8).reshape((qimg.height(), qimg.width(), 4))
-                rgb_np = arr[:, :, :3][:, :, ::-1] if qimg.format() == qimg.Format_RGBA8888 else arr[:, :, :3]
+                # QImage.Format_RGBA8888 is byte-ordered RGBA, keep channels as-is
+                rgb_np = arr[:, :, :3]
                 outlined_np = self.classifier.outline_channel_largest_blobs(
                     rgb_np, channel_enabled=self.classifier.channel_outline_enabled
                 )
@@ -994,7 +991,7 @@ class TypeViewer(QMainWindow):
         painter.drawImage(0, 0, image)
         painter.end()
 
-    def export_category_grids(self, dest: Path):
+    def export_category_grids(self, dest: Path, outlines: bool = False):
         cols = 5
         rows = 5
         cell = 300
@@ -1035,7 +1032,7 @@ class TypeViewer(QMainWindow):
                     col = pos % cols
                     x = margin + col * (cell + spacing)
                     y = margin + title_height + row * (cell + spacing)
-                    pix = item.get_pixmap(self.outlines_enabled)
+                    pix = item.pixmap_outlined if outlines else item.pixmap_plain
                     image_area_height = cell - label_height
                     scaled = pix.scaled(cell, image_area_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     target_x = x + (cell - scaled.width()) / 2
@@ -1067,12 +1064,14 @@ class TypeViewer(QMainWindow):
 
                 painter.end()
                 base = f"{category.lower()}_{idx + 1}"
-                png_path = dest / f"{base}.png"
+                suffix = "_outlined" if outlines else ""
+                png_path = dest / f"{base}{suffix}.png"
                 image.save(str(png_path))
                 combined_pages.append(image)
 
         if combined_pages:
-            combined_pdf_path = dest / "TypesImages.pdf"
+            suffix = "_outlined" if outlines else ""
+            combined_pdf_path = dest / f"TypesImages{suffix}.pdf"
             writer = QPdfWriter(str(combined_pdf_path))
             writer.setResolution(300)
             writer.setPageSizeMM(QSizeF((width / 300) * 25.4, (height / 300) * 25.4))
