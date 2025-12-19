@@ -1,0 +1,3 @@
+Family Member 1: Alice Johnson, Age 42, Hobbies: gardening, kayaking
+Family Member 2: Marcus Lee, Age 17, Hobbies: soccer, sketching
+Family Member 3: Priya Patel, Age 65, Hobbies: quilting, birdwatching

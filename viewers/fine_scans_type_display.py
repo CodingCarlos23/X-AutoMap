@@ -1,5 +1,7 @@
 
 from PIL import Image, ImageDraw, ImageFont
+import os
+import shutil
 
 def create_scan_type_display_image(image_paths, micron_scales, output_path="scan_type_display.png"):
     """
@@ -133,6 +135,86 @@ def create_scan_type_display_image(image_paths, micron_scales, output_path="scan
     image.save(output_path)
     print(f"Image saved to {output_path}")
 
+def export_higher_res_fine_scan_merges(
+    scan_entries,
+    output_root="/home/codingcarlos/Documents/AddGoodSamples/higherres",
+    output_size=(4096, 4096),
+    fine_scan_root="/home/codingcarlos/Desktop/Data/Beamline_Data/Automap_2025Q3/all_xrf",
+    elements_map=None,
+):
+    """
+    Copies elemental TIFF files for the specified fine scans, merges them at 4K,
+    and writes PNGs named coarse_##_fine_##_type.png under the output root.
+    """
+    os.makedirs(output_root, exist_ok=True)
+
+    if elements_map is None:
+        elements_map = {"r": "Ca", "g": "Fe", "b": "Si"}
+
+    for entry in scan_entries:
+        coarse_id = entry["coarse_id"]
+        fine_id = entry["fine_id"]
+        scan_type = entry["type"]
+        element_paths = {
+            "r": os.path.join(
+                fine_scan_root,
+                f"output_tiff_scan2D_{fine_id}",
+                f"detsum_{elements_map['r']}_K_norm.tiff",
+            ),
+            "g": os.path.join(
+                fine_scan_root,
+                f"output_tiff_scan2D_{fine_id}",
+                f"detsum_{elements_map['g']}_K_norm.tiff",
+            ),
+            "b": os.path.join(
+                fine_scan_root,
+                f"output_tiff_scan2D_{fine_id}",
+                f"detsum_{elements_map['b']}_K_norm.tiff",
+            ),
+        }
+
+        dest_dir = os.path.join(output_root, f"coarse_{coarse_id}_fine_{fine_id}")
+        os.makedirs(dest_dir, exist_ok=True)
+
+        copied_paths = {}
+        for element, src_path in element_paths.items():
+            if not os.path.exists(src_path):
+                print(f"Missing element file for {fine_id}: {src_path}")
+                copied_paths = None
+                break
+            dest_path = os.path.join(dest_dir, os.path.basename(src_path))
+            shutil.copy(src_path, dest_path)
+            copied_paths[element] = dest_path
+
+        if not copied_paths:
+            continue
+
+        try:
+            r_img = Image.open(copied_paths["r"])
+            g_img = Image.open(copied_paths["g"])
+            b_img = Image.open(copied_paths["b"])
+
+            def normalize(arr):
+                arr = arr.astype("float32")
+                if arr.max() > arr.min():
+                    arr = (arr - arr.min()) / (arr.max() - arr.min()) * 255
+                return arr.astype("uint8")
+
+            import numpy as np
+            r_np = normalize(np.array(r_img))
+            g_np = normalize(np.array(g_img))
+            b_np = normalize(np.array(b_img))
+            rgb_np = np.stack([r_np, g_np, b_np], axis=-1)
+            merged = Image.fromarray(rgb_np, "RGB")
+
+            merged = merged.resize(output_size, Image.LANCZOS)
+            out_name = f"coarse_{coarse_id}_fine_{fine_id}_{scan_type}.png"
+            out_path = os.path.join(output_root, out_name)
+            merged.save(out_path)
+            print(f"Saved 4K merged image to {out_path}")
+        except Exception as exc:
+            print(f"Failed to merge fine scan {fine_id}: {exc}")
+
 if __name__ == "__main__":
     # Define the file paths for the TIFF images
     image_paths = {
@@ -159,3 +241,52 @@ if __name__ == "__main__":
         "Partial": [2.5, 1.2, 3.5]
     }
     create_scan_type_display_image(image_paths, micron_scales, output_path="/home/codingcarlos/Documents/AddGoodSamples/FineScanTypesShowcase.png")
+
+    scan_entries = [
+        {
+            "coarse_id": 368604,
+            "fine_id": 368606,
+            "type": "separate",
+        },
+        {
+            "coarse_id": 369139,
+            "fine_id": 369140,
+            "type": "separate",
+        },
+        {
+            "coarse_id": 369155,
+            "fine_id": 369158,
+            "type": "separate",
+        },
+        {
+            "coarse_id": 368612,
+            "fine_id": 368613,
+            "type": "together",
+        },
+        {
+            "coarse_id": 368950,
+            "fine_id": 368953,
+            "type": "together",
+        },
+        {
+            "coarse_id": 369089,
+            "fine_id": 369090,
+            "type": "together",
+        },
+        {
+            "coarse_id": 369068,
+            "fine_id": 369071,
+            "type": "partial",
+        },
+        {
+            "coarse_id": 369009,
+            "fine_id": 369012,
+            "type": "partial",
+        },
+        {
+            "coarse_id": 369116,
+            "fine_id": 369117,
+            "type": "partial",
+        },
+    ]
+    export_higher_res_fine_scan_merges(scan_entries)
